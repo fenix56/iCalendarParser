@@ -9,7 +9,8 @@ public enum DateTimeType {
         tzId: String? = nil
     ) -> DateFormatter {
         let formatter = DateFormatter()
-
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        
         if let tzId {
             formatter.timeZone = TimeZone(identifier: tzId)
         } else if self == .date {
