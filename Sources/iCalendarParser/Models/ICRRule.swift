@@ -16,10 +16,12 @@ public struct ICRRule {
     public var byDayOfMonth: [Int]? {
         didSet {
             guard let byDayOfMonth else { return }
-            assert(
-                byDayOfMonth.allSatisfy { (1...31).contains(abs($0)) },
-                "by-day-of-month rules must be between 1 and 31 or -31 and -1: \(byDayOfMonth)"
-            )
+            let valid = byDayOfMonth.allSatisfy { (1...31).contains(abs($0)) }
+            guard valid else {
+                print("by-day-of-month rules must be between 1 and 31 or -31 and -1: \(byDayOfMonth)")
+                self.byDayOfMonth = nil
+                return
+            }
         }
     }
 
@@ -30,10 +32,12 @@ public struct ICRRule {
     public var byDayOfYear: [Int]? {
         didSet {
             guard let byDayOfYear else { return }
-            assert(
-                byDayOfYear.allSatisfy { (1...366).contains(abs($0)) },
-                "by-day-of-year rules must be between 1 and 366 or -366 and -1: \(byDayOfYear)"
-            )
+            let valid = byDayOfYear.allSatisfy { (1...366).contains(abs($0)) }
+            guard valid else {
+                print("by-day-of-year rules must be between 1 and 366 or -366 and -1: \(byDayOfYear)")
+                self.byDayOfYear = nil
+                return
+            }
         }
     }
 
@@ -43,10 +47,12 @@ public struct ICRRule {
     public var byHour: [Int]? {
         didSet {
             guard let byHour else { return }
-            assert(
-                byHour.allSatisfy { (0..<24).contains($0) },
-                "by-hour rules must be between 0 and 24 (exclusive): \(byHour)"
-            )
+            let valid = byHour.allSatisfy { (0..<24).contains($0) }
+            guard valid else {
+                print("by-hour rules must be between 0 and 24 (exclusive): \(byHour)")
+                self.byHour = nil
+                return
+            }
         }
     }
 
@@ -56,10 +62,12 @@ public struct ICRRule {
     public var byMinute: [Int]? {
         didSet {
             guard let byMinute else { return }
-            assert(
-                byMinute.allSatisfy { (0..<60).contains($0) },
-                "by-minute rules must be between 0 and 60 (exclusive): \(byMinute)"
-            )
+            let valid = byMinute.allSatisfy { (0..<60).contains($0) }
+            guard valid else {
+                print("by-minute rules must be between 0 and 60 (exclusive): \(byMinute)")
+                self.byMinute = nil
+                return
+            }
         }
     }
 
@@ -69,10 +77,12 @@ public struct ICRRule {
     public var byMonth: [Int]? {
         didSet {
             guard let byMonth else { return }
-            assert(
-                byMonth.allSatisfy { (1...12).contains($0) },
-                "by-month rules must be between 1 and 12: \(byMonth)"
-            )
+            let valid = byMonth.allSatisfy { (1...12).contains($0) }
+            guard valid else {
+                print("by-month rules must be between 1 and 12: \(byMonth)")
+                self.byMonth = nil
+                return
+            }
         }
     }
 
@@ -81,10 +91,12 @@ public struct ICRRule {
     public var bySecond: [Int]? {
         didSet {
             guard let bySecond else { return }
-            assert(
-                bySecond.allSatisfy { (0...60).contains($0) },
-                "by-second rules must be between 0 and 60 (inclusive): \(bySecond)"
-            )
+            let valid = bySecond.allSatisfy { (0...60).contains($0) }
+            guard valid else {
+                print("by-second rules must be between 0 and 60 (inclusive): \(bySecond)")
+                self.bySecond = nil
+                return
+            }
         }
     }
 
@@ -99,10 +111,13 @@ public struct ICRRule {
     public var bySetPos: [Int]? {
         didSet {
             guard let bySetPos else { return }
-            assert(
-                bySetPos.allSatisfy { (1...366).contains(abs($0)) },
-                "by-set-pos rules must be between 1 and 366 or -366 and -1: \(bySetPos)"
-            )
+            let valid = bySetPos.allSatisfy { (1...366).contains(abs($0)) }
+            guard valid else {
+                print("by-set-pos rules must be between 1 and 366 or -366 and -1: \(bySetPos)")
+                self.bySetPos = nil
+                return
+            }
+            
         }
     }
 
@@ -113,10 +128,12 @@ public struct ICRRule {
     public var byWeekOfYear: [Int]? {
         didSet {
             guard let byWeekOfYear else { return }
-            assert(
-                byWeekOfYear.allSatisfy { (1...53).contains(abs($0)) },
-                "by-week-of-year rules must be between 1 and 53 or -53 and -1: \(byWeekOfYear)"
-            )
+            let valid = byWeekOfYear.allSatisfy { (1...53).contains(abs($0)) }
+            guard valid else {
+                print("by-week-of-year rules must be between 1 and 53 or -53 and -1: \(byWeekOfYear)")
+                self.byWeekOfYear = nil
+                return
+            }
         }
     }
 
@@ -249,14 +266,13 @@ public struct ICRRule {
             week: Int? = nil,
             dayOfWeek: DayOfWeek
         ) {
-            self.week = week
             self.dayOfWeek = dayOfWeek
-
-            if let week {
-                assert(
-                    (1...53).contains(abs(week)),
-                    "Week-of-year \(String(week)) is not between 1 and 53 or -53 and -1 (each inclusive)"
-                )
+            
+            if let week, (1...53).contains(abs(week)) == false {
+                print("Week-of-year \(String(week)) is not between 1 and 53 or -53 and -1 (each inclusive)")
+                self.week = nil
+            } else {
+                self.week = week
             }
         }
 
