@@ -44,8 +44,11 @@ public struct ICTimeZone: ICComponentable {
         self.standard = standard
         self.timeZoneId = timeZoneId
         self.timeZoneUrl = timeZoneUrl
-
-        assert(standard != nil || daylight != nil, "Either standard or daylight timezone should be set")
+ 
+        guard standard != nil || daylight != nil else {
+            print("Either standard or daylight timezone should be set")
+            return
+        }
     }
 }
 

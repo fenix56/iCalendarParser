@@ -43,13 +43,20 @@ public struct ICParser {
             from: elements
         )
 
+        let timeZoneComponents = getComponents(
+            type: .timeZone,
+            from: elements
+        )
+
         let events = buildEvents(from: eventComponents)
+        let timeZones = buildTimeZones(from: timeZoneComponents)
 
         return ICalendar(
             calendarScale: calendarScale,
             events: events,
             method: method,
-            productId: prodId
+            productId: prodId,
+            timeZones: timeZones
         )
     }
 
