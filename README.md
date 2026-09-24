@@ -42,6 +42,18 @@ let parser = ICParser()
 let calendar: ICalendar? = parser.calendar(from: rawICS)
 ```
 
+### Time zones
+
+By default, dates follow RFC 5545: a time without `Z` or `TZID` is local time on the device, and a `TZID` is resolved as a system time zone or with the calendar's `VTIMEZONE` definitions.
+
+Apps that relied on the earlier behaviour can opt in to it:
+
+```swift
+let parser = ICParser(timeZoneHandling: .legacy)
+```
+
+With `.legacy`, a time without `Z` or `TZID` is read as UTC, a `TZID` that is not a system time zone identifier is read in the device's time zone, and `VTIMEZONE` components are not parsed.
+
 ## Is it production ready?
 
 iCalendarParser is currently not feature complete yet. While it requires an additional implementation to be fully compatible with RFC5545, we appreciate contributions from the community to help us improve the library. 

@@ -9,9 +9,12 @@ struct PropertyBuilder {
     /// A `TZID` is resolved as a system time zone first, then against the
     /// `VTIMEZONE` definitions in `timeZones`. A local time that cannot be
     /// bound to a time zone is returned as floating.
+    ///
+    /// See `ICParser.TimeZoneHandling` for how `.legacy` differs.
     static func buildDateTime(
         from prop: ICProperty,
-        timeZones: [ICTimeZone] = []
+        timeZones: [ICTimeZone] = [],
+        timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
         let isUTC = prop.value.hasSuffix("Z")
@@ -30,14 +33,20 @@ struct PropertyBuilder {
             }
 
             guard let tzid = getTimeZoneId(from: params) else {
-                return ICDateTime(date: wallClock.date(in: .current), type: .dateTime, isFloating: true)
+                let date = timeZoneHandling == .legacy ? wallClock.date(offset: 0) : wallClock.date(in: .current)
+                return ICDateTime(date: date, type: .dateTime, isFloating: true)
             }
 
-            if let timeZone = TimeZoneResolver.timeZone(for: tzid) {
+            let timeZone = timeZoneHandling == .legacy
+                ? TimeZone(identifier: tzid)
+                : TimeZoneResolver.timeZone(for: tzid)
+
+            if let timeZone {
                 return .dateTime(from: wallClock.date(in: timeZone), tzId: tzid)
             }
 
-            if let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
+            if timeZoneHandling == .standard,
+               let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
                let date = definition.date(for: wallClock) {
                 return .dateTime(from: date, tzId: tzid)
             }
@@ -48,7 +57,8 @@ struct PropertyBuilder {
 
     // swiftlint:disable:next cyclomatic_complexity
     static func buildRRule(
-        from prop: ICProperty
+        from prop: ICProperty,
+        timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICRRule? {
         let params = getParamsOfValue(from: prop.value)
         let frequencyProperty = params
@@ -67,7 +77,7 @@ struct PropertyBuilder {
             case Constant.Property.interval:
                 rule.interval = Int(property.value)
             case Constant.Property.until:
-                rule.until = buildDateTime(from: property)
+                rule.until = buildDateTime(from: property, timeZoneHandling: timeZoneHandling)
             case Constant.Property.count:
                 rule.count = Int(property.value)
             case Constant.Property.bySecond:

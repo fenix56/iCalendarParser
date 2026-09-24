@@ -33,13 +33,14 @@ struct ICComponent {
     /// Returns `ICDateTime` from properties, resolving `TZID` against the given time zone definitions
     func buildDateTime(
         of name: String,
-        timeZones: [ICTimeZone]
+        timeZones: [ICTimeZone],
+        timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICDateTime? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildDateTime(from: prop, timeZones: timeZones)
+        return PropertyBuilder.buildDateTime(from: prop, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
     }
 
     /// Returns `String` from properties
@@ -79,11 +80,19 @@ struct ICComponent {
     func buildProperty(
         of name: String
     ) -> ICRRule? {
+        buildRecurrenceRule(of: name, timeZoneHandling: .standard)
+    }
+
+    /// Returns `ICRRule` from properties, parsing `UNTIL` with the given time zone handling
+    func buildRecurrenceRule(
+        of name: String,
+        timeZoneHandling: ICParser.TimeZoneHandling
+    ) -> ICRRule? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildRRule(from: prop)
+        return PropertyBuilder.buildRRule(from: prop, timeZoneHandling: timeZoneHandling)
     }
 
     /// Returns `[Attendee]` from properties

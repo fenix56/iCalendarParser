@@ -9,7 +9,8 @@ public struct ICDateTime {
     /// `true` for a local time that is not bound to a time zone: a `DATE-TIME` without
     /// the `Z` suffix and without a `TZID`, or with a `TZID` that could not be resolved.
     ///
-    /// `date` is then interpreted in the device's current time zone.
+    /// `date` is then interpreted in the device's current time zone, except for a value
+    /// without a `TZID` parsed with `ICParser.TimeZoneHandling.legacy`, which is read as UTC.
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.5)

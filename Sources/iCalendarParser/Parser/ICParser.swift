@@ -4,7 +4,29 @@ typealias ICProperty = (name: String, value: String)
 
 public struct ICParser {
 
-    public init() {}
+    /// How `DATE-TIME` values are bound to a time zone
+    public enum TimeZoneHandling: Sendable {
+
+        /// Follows RFC 5545.
+        ///
+        /// A value without `Z` or `TZID` is floating local time in the device's time zone.
+        /// A `TZID` is resolved as a system time zone identifier, including identifiers with a
+        /// vendor prefix, and then against the `VTIMEZONE` components of the calendar.
+        case standard
+
+        /// Reproduces how dates were parsed before `VTIMEZONE` support.
+        ///
+        /// - A value without `Z` or `TZID` is read as UTC.
+        /// - A `TZID` that is not a system time zone identifier is read in the device's time zone.
+        /// - `VTIMEZONE` components are not parsed, so `ICalendar.timeZones` is empty.
+        case legacy
+    }
+
+    public let timeZoneHandling: TimeZoneHandling
+
+    public init(timeZoneHandling: TimeZoneHandling = .standard) {
+        self.timeZoneHandling = timeZoneHandling
+    }
 
     /// Parse strings to create ICalendar object. Returns nil if not found.
     public func calendar(
@@ -48,7 +70,7 @@ public struct ICParser {
             from: elements
         )
 
-        let timeZones = buildTimeZones(from: timeZoneComponents)
+        let timeZones = timeZoneHandling == .legacy ? [] : buildTimeZones(from: timeZoneComponents)
         let events = buildEvents(from: eventComponents, timeZones: timeZones)
 
         return ICalendar(
@@ -171,25 +193,32 @@ public struct ICParser {
         return components.map { component -> ICEvent in
             var event = ICEvent()
 
+            func dateTime(_ name: String) -> ICDateTime? {
+                component.buildDateTime(of: name, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
+            }
+
             event.attendees = component.buildAttendees(of: Constant.Property.attendee)
             event.classification = component.buildProperty(of: Constant.Property.classification)
             event.description = component.buildText(of: Constant.Property.description)
-            event.dtCreated = component.buildProperty(of: Constant.Property.created)?.date
-            event.dtEnd = component.buildDateTime(of: Constant.Property.dtEnd, timeZones: timeZones)
-            event.dtStamp = component.buildProperty(of: Constant.Property.dtStamp)?.date ?? Date()
-            event.dtStart = component.buildDateTime(of: Constant.Property.dtStart, timeZones: timeZones)
-            event.lastModified = component.buildProperty(of: Constant.Property.lastModified)?.date
+            event.dtCreated = dateTime(Constant.Property.created)?.date
+            event.dtEnd = dateTime(Constant.Property.dtEnd)
+            event.dtStamp = dateTime(Constant.Property.dtStamp)?.date ?? Date()
+            event.dtStart = dateTime(Constant.Property.dtStart)
+            event.lastModified = dateTime(Constant.Property.lastModified)?.date
             event.location = component.buildText(of: Constant.Property.location)
             event.organizer = component.buildProperty(of: Constant.Property.organizer)
             event.priority = component.buildProperty(of: Constant.Property.priority)
-            event.recurrenceId = component.buildDateTime(of: Constant.Property.recurrenceId, timeZones: timeZones)
+            event.recurrenceId = dateTime(Constant.Property.recurrenceId)
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)
             event.summary = component.buildText(of: Constant.Property.summary)
             event.timeTransparency = component.buildProperty(of: Constant.Property.timeTransparency)
             event.url = URL(string: component.buildProperty(of: Constant.Property.url) ?? "")
             event.uid = component.buildProperty(of: Constant.Property.uid) ?? ""
-            event.recurrenceRule = component.buildProperty(of: Constant.Property.recurrenceRule)
+            event.recurrenceRule = component.buildRecurrenceRule(
+                of: Constant.Property.recurrenceRule,
+                timeZoneHandling: timeZoneHandling
+            )
 
             event.nonStandardProperties = component.getNonStandardProperties()
 
