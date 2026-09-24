@@ -63,12 +63,17 @@ public struct ICParser {
     func getProperties(
         from ics: String
     ) -> [ICProperty] {
-        return ics
+        // Kept as separate statements: a single chained expression exceeds
+        // the Swift 6 type checker's complexity limit on some toolchains.
+        let lines: [String] = ics
             .replacingOccurrences(of: "\r\n ", with: "")
             .components(separatedBy: "\r\n")
-            .map { $0.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true) }
-            .filter { $0.count > 1 }
-            .map { (String($0[0]), String($0[1])) }
+
+        return lines.compactMap { line -> ICProperty? in
+            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
+            guard parts.count > 1 else { return nil }
+            return (name: String(parts[0]), value: String(parts[1]))
+        }
     }
 
     private func getProperty(

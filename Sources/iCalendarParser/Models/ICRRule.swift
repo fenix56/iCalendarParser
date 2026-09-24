@@ -289,7 +289,12 @@ public struct ICRRule {
         }
 
         public static func from(_ value: String) -> Self? {
-            let index = value.index(value.startIndex, offsetBy: value.count - 2)
+            // A weekday is always two characters, e.g. "MO" or "-1SU"
+            guard value.count >= 2 else {
+                return nil
+            }
+
+            let index = value.index(value.endIndex, offsetBy: -2)
 
             let dayOfWeekStr = String(value[index...])
             let weekStr = String(value[..<index])
