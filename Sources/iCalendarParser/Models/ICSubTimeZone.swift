@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ICSubTimeZone {
+public struct ICSubTimeZone: Equatable, Sendable {
 
     /// Defines the effective start date and time for a time zone specification.
     ///

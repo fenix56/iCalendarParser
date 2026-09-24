@@ -2,7 +2,7 @@
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.10)
-public struct ICRRule {
+public struct ICRRule: Equatable, Sendable {
 
     // MARK: - Public properties
 
@@ -117,7 +117,7 @@ public struct ICRRule {
                 self.bySetPos = nil
                 return
             }
-            
+
         }
     }
 
@@ -169,9 +169,48 @@ public struct ICRRule {
         }
     }
 
+    // MARK: - Init
+
+    public init(
+        byDay: [Day]? = nil,
+        byDayOfMonth: [Int]? = nil,
+        byDayOfYear: [Int]? = nil,
+        byHour: [Int]? = nil,
+        byMinute: [Int]? = nil,
+        byMonth: [Int]? = nil,
+        bySecond: [Int]? = nil,
+        bySetPos: [Int]? = nil,
+        byWeekOfYear: [Int]? = nil,
+        count: Int? = nil,
+        frequency: Frequency,
+        interval: Int? = nil,
+        startOfWorkweek: DayOfWeek? = nil,
+        until: ICDateTime? = nil
+    ) {
+        self.byDay = byDay
+        self.byDayOfMonth = byDayOfMonth
+        self.byDayOfYear = byDayOfYear
+        self.byHour = byHour
+        self.byMinute = byMinute
+        self.byMonth = byMonth
+        self.bySecond = bySecond
+        self.bySetPos = bySetPos
+        self.byWeekOfYear = byWeekOfYear
+        self.count = count
+        self.frequency = frequency
+        self.interval = interval
+        self.startOfWorkweek = startOfWorkweek
+        self.until = until
+    }
+}
+
+// MARK: - Nested types
+
+extension ICRRule {
+
     // MARK: - Frequency
 
-    public enum Frequency {
+    public enum Frequency: Sendable {
         case secondly
         case minutely
         case hourly
@@ -202,7 +241,7 @@ public struct ICRRule {
         }
     }
 
-    public enum DayOfWeek {
+    public enum DayOfWeek: Sendable {
         case monday
         case tuesday
         case wednesday
@@ -254,7 +293,7 @@ public struct ICRRule {
 
     // MARK: - Day
 
-    public struct Day: Equatable {
+    public struct Day: Equatable, Sendable {
 
         /// The week. May be negative.
         public let week: Int?
@@ -267,7 +306,7 @@ public struct ICRRule {
             dayOfWeek: DayOfWeek
         ) {
             self.dayOfWeek = dayOfWeek
-            
+
             if let week, (1...53).contains(abs(week)) == false {
                 print("Week-of-year \(String(week)) is not between 1 and 53 or -53 and -1 (each inclusive)")
                 self.week = nil
@@ -305,60 +344,5 @@ public struct ICRRule {
 
             return Self(week: Int(weekStr), dayOfWeek: dayOfWeek)
         }
-    }
-
-    // MARK: - Private properties
-
-    private var properties: [(String, [Any]?)] {
-        [
-            (Constant.Property.byDay, byDay),
-            (Constant.Property.byDayOfMonth, byDayOfMonth),
-            (Constant.Property.byDayOfYear, byDayOfYear),
-            (Constant.Property.byHour, byHour),
-            (Constant.Property.byMinute, byMinute),
-            (Constant.Property.byMonth, byMonth),
-            (Constant.Property.bySecond, bySecond),
-            (Constant.Property.bySetPos, bySetPos),
-            (Constant.Property.byWeekOfYear, byWeekOfYear),
-            (Constant.Property.count, [count].compactMap { $0 }),
-            (Constant.Property.frequency, [frequency]),
-            (Constant.Property.interval, [interval].compactMap { $0 }),
-            (Constant.Property.startOfWorkweek, [startOfWorkweek].compactMap { $0 }),
-            (Constant.Property.until, [until].compactMap { $0 })
-        ]
-    }
-
-    // MARK: - Init
-
-    public init(
-        byDay: [Day]? = nil,
-        byDayOfMonth: [Int]? = nil,
-        byDayOfYear: [Int]? = nil,
-        byHour: [Int]? = nil,
-        byMinute: [Int]? = nil,
-        byMonth: [Int]? = nil,
-        bySecond: [Int]? = nil,
-        bySetPos: [Int]? = nil,
-        byWeekOfYear: [Int]? = nil,
-        count: Int? = nil,
-        frequency: Frequency,
-        interval: Int? = nil,
-        startOfWorkweek: DayOfWeek? = nil,
-        until: ICDateTime? = nil
-    ) {
-        self.byDay = byDay
-        self.byDayOfMonth = byDayOfMonth
-        self.byDayOfYear = byDayOfYear
-        self.byHour = byHour
-        self.byMinute = byMinute
-        self.byMonth = byMonth
-        self.bySecond = bySecond
-        self.bySetPos = bySetPos
-        self.byWeekOfYear = byWeekOfYear
-        self.count = count
-        self.frequency = frequency
-        self.interval = interval
-        self.startOfWorkweek = startOfWorkweek
-        self.until = until
     }
 }

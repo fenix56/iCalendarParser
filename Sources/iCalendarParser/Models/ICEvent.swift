@@ -3,7 +3,7 @@ import Foundation
 /// A grouping of component properties that describe an
 ///
 /// See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.6.1)
-public struct ICEvent: ICComponentable {
+public struct ICEvent: ICComponentable, Sendable {
 
     // MARK: - ICComponentable
 
@@ -245,8 +245,27 @@ public struct ICEvent: ICComponentable {
     }
 }
 
-extension ICEvent: Equatable {
-    public static func == (lhs: ICEvent, rhs: ICEvent) -> Bool {
-        lhs.uid == rhs.uid
+/// Two events are equal when all their properties are equal.
+/// Use `id` to find the same event in different versions of a calendar.
+extension ICEvent: Equatable {}
+
+extension ICEvent: Identifiable {
+
+    /// Identifies an event, or one changed occurrence of a recurring event.
+    ///
+    /// A recurring event and the events that change single occurrences of it share
+    /// a `UID` and differ in `RECURRENCE-ID`.
+    public struct ID: Hashable, Sendable { // swiftlint:disable:this type_name - conventional for Identifiable
+        public let uid: String
+        public let recurrenceId: Date?
+
+        public init(uid: String, recurrenceId: Date? = nil) {
+            self.uid = uid
+            self.recurrenceId = recurrenceId
+        }
+    }
+
+    public var id: ID {
+        ID(uid: uid, recurrenceId: recurrenceId?.date)
     }
 }

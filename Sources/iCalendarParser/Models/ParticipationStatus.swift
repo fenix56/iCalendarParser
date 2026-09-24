@@ -1,6 +1,6 @@
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.2.12)
-public enum ParticipationStatus {
+public enum ParticipationStatus: Sendable {
     case needsAction
     case accepted
     case declined

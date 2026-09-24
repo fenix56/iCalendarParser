@@ -1,7 +1,7 @@
 import Foundation
 
 /// The zone a parsed date was resolved in, used to convert between instants and wall-clock times
-enum DateTimeZone: Equatable {
+enum DateTimeZone: Equatable, Sendable {
 
     /// A system time zone, including UTC and the device's time zone
     case system(TimeZone)

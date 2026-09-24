@@ -13,5 +13,5 @@ Before submitting changes, please follow these guidelines:
 5. Make sure the entire test suite passes locally and on Github Action.
 6. Open a Pull Request.
 
-Unless otherwise noted, the Sourcery source files are distributed under
+Unless otherwise noted, the iCalendarParser source files are distributed under
 the MIT-style [LICENSE](LICENSE).

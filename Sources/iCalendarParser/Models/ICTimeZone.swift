@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ICTimeZone: ICComponentable {
+public struct ICTimeZone: ICComponentable, Sendable {
 
     // MARK: - ICComponentable
 
@@ -44,7 +44,7 @@ public struct ICTimeZone: ICComponentable {
         self.standard = standard
         self.timeZoneId = timeZoneId
         self.timeZoneUrl = timeZoneUrl
- 
+
         guard standard != nil || daylight != nil else {
             print("Either standard or daylight timezone should be set")
             return
@@ -52,8 +52,12 @@ public struct ICTimeZone: ICComponentable {
     }
 }
 
-extension ICTimeZone: Equatable {
-    public static func == (lhs: ICTimeZone, rhs: ICTimeZone) -> Bool {
-        lhs.timeZoneId == rhs.timeZoneId
+/// Two time zones are equal when all their properties are equal.
+/// Use `id` to find the same time zone in different versions of a calendar.
+extension ICTimeZone: Equatable {}
+
+extension ICTimeZone: Identifiable {
+    public var id: String {
+        timeZoneId
     }
 }

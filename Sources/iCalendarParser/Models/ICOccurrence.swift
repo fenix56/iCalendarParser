@@ -1,7 +1,7 @@
 import Foundation
 
 /// A single occurrence of an event, with its start and end.
-public struct ICOccurrence: Equatable {
+public struct ICOccurrence: Equatable, Sendable {
 
     /// The event this occurrence belongs to. For a moved or changed occurrence this is the
     /// overriding event (the one with `recurrenceId`), with its own summary, location and so on.

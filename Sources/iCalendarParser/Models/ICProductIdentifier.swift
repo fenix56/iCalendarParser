@@ -4,7 +4,7 @@ import Foundation
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.7.3)
-public struct ICProductIdentifier {
+public struct ICProductIdentifier: Sendable {
 
     public var raw: String
 

@@ -2,7 +2,7 @@
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.1)
-public struct ICAttendee {
+public struct ICAttendee: Equatable, Sendable {
 
     /// Common name
     public var cname: String?

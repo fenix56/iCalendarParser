@@ -7,7 +7,7 @@ import Foundation
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.6)
-public struct ICDuration: Equatable {
+public struct ICDuration: Equatable, Sendable {
 
     public var isNegative: Bool
     public var weeks: Int

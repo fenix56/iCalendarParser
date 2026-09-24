@@ -2,7 +2,7 @@ import Foundation
 
 typealias ICProperty = (name: String, value: String)
 
-public struct ICParser {
+public struct ICParser: Sendable {
 
     /// How `DATE-TIME` values are bound to a time zone
     public enum TimeZoneHandling: Sendable {

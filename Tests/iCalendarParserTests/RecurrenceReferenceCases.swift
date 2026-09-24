@@ -659,7 +659,7 @@ enum RecurrenceReferenceCases {
                 "20240101T090000", "20240101T170000", "20240108T090000", "20240108T170000",
                 "20240115T090000"
             ]
-        ),
+        )
     ]
 }
 // swiftlint:enable file_length type_body_length

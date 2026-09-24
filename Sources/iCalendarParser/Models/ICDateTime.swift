@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ICDateTime {
+public struct ICDateTime: Sendable {
 
     public var date: Date
     public var type: DateTimeType

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.4)
-public struct ICalendar {
+public struct ICalendar: Sendable {
 
     var components: [ICComponentable] {
         [events, timeZones]

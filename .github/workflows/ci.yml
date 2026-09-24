@@ -1,31 +1,50 @@
 name: ci
 
 on:
-  - push
-  - pull_request
+  push:
+  pull_request:
 
 jobs:
-  check-commit:
-    runs-on: macOS-12
-
+  lint:
+    runs-on: ubuntu-latest
+    container: ghcr.io/realm/swiftlint:0.65.1
     steps:
-      - name: Use Xcode 14.2
-        run: |
-          sudo xcode-select -s /Applications/Xcode_14.2.app/Contents/Developer
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run lint
+        run: swiftlint --strict --reporter github-actions-logging
+
+  test-macos:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Current platform versions
         run: |
           xcodebuild -version
           swift --version
-          swiftlint version
 
-      - name: Checkout default branch
-        uses: actions/checkout@v2
+      - name: Run test
+        run: swift test
 
-      - name: Run lint
-        run: |
-          make lint
+  test-linux:
+    runs-on: ubuntu-latest
+    container: swift:${{ matrix.swift }}
+    strategy:
+      fail-fast: false
+      matrix:
+        swift: ["6.0", "latest"]
+        # Dates without a time zone are parsed in the device's time zone
+        tz: ["UTC", "America/Los_Angeles", "Pacific/Auckland"]
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Run test
         run: |
-          make test
+          swift --version
+          swift test
