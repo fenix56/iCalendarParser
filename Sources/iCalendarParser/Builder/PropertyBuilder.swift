@@ -4,24 +4,45 @@ struct PropertyBuilder {
 
     // MARK: - Build functions
 
+    /// Returns `ICDateTime` for a `DATE` or `DATE-TIME` property.
+    ///
+    /// A `TZID` is resolved as a system time zone first, then against the
+    /// `VTIMEZONE` definitions in `timeZones`. A local time that cannot be
+    /// bound to a time zone is returned as floating.
     static func buildDateTime(
-        from prop: ICProperty
+        from prop: ICProperty,
+        timeZones: [ICTimeZone] = []
     ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
-        let valueType = getDateTimeType(from: params)
-        let tzid = getTimeZoneId(from: params)
+        let isUTC = prop.value.hasSuffix("Z")
+        let value = isUTC ? String(prop.value.dropLast()) : prop.value
 
-        guard
-            let date = valueType.dateFormatter(tzId: tzid).date(from: prop.value)
-        else {
+        guard let wallClock = WallClock(value) else {
             return nil
         }
 
-        switch valueType {
+        switch getDateTimeType(from: params, value: value) {
         case .date:
-            return .date(from: date)
-        default:
-            return .dateTime(from: date, tzId: tzid)
+            return .date(from: wallClock.date(in: .current))
+        case .dateTime:
+            if isUTC {
+                return .dateTime(from: wallClock.date(offset: 0))
+            }
+
+            guard let tzid = getTimeZoneId(from: params) else {
+                return ICDateTime(date: wallClock.date(in: .current), type: .dateTime, isFloating: true)
+            }
+
+            if let timeZone = TimeZoneResolver.timeZone(for: tzid) {
+                return .dateTime(from: wallClock.date(in: timeZone), tzId: tzid)
+            }
+
+            if let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
+               let date = definition.date(for: wallClock) {
+                return .dateTime(from: date, tzId: tzid)
+            }
+
+            return ICDateTime(date: wallClock.date(in: .current), type: .dateTime, tzId: tzid, isFloating: true)
         }
     }
 
@@ -175,16 +196,18 @@ struct PropertyBuilder {
 
     /// Returns `ICDateTimeType` from the given properties
     ///
-    /// The default value is `.dateTime` if no property is found
+    /// Without a `VALUE` parameter the type is inferred from the value, so
+    /// that e.g. `UNTIL=20240110` in a recurrence rule is read as a `DATE`.
     private static func getDateTimeType(
-        from params: [ICProperty]
+        from params: [ICProperty],
+        value: String
     ) -> DateTimeType {
         guard
             let valueType = params.first(where: {
                 $0.name == Constant.Property.value
             })?.value
         else {
-            return .dateTime
+            return value.contains("T") ? .dateTime : .date
         }
 
         switch valueType {

@@ -27,11 +27,19 @@ struct ICComponent {
     func buildProperty(
         of name: String
     ) -> ICDateTime? {
+        buildDateTime(of: name, timeZones: [])
+    }
+
+    /// Returns `ICDateTime` from properties, resolving `TZID` against the given time zone definitions
+    func buildDateTime(
+        of name: String,
+        timeZones: [ICTimeZone]
+    ) -> ICDateTime? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildDateTime(from: prop)
+        return PropertyBuilder.buildDateTime(from: prop, timeZones: timeZones)
     }
 
     /// Returns `String` from properties

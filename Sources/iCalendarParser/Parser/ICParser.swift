@@ -38,25 +38,25 @@ public struct ICParser {
             from: elements
         )?.value
 
+        let timeZoneComponents = getComponents(
+            type: .timeZone,
+            from: elements
+        )
+
         let eventComponents = getComponents(
             type: .event,
             from: elements
         )
 
-//        let timeZoneComponents = getComponents(
-//            type: .timeZone,
-//            from: elements
-//        )
-
-        let events = buildEvents(from: eventComponents)
-//        let timeZones = buildTimeZones(from: timeZoneComponents)
+        let timeZones = buildTimeZones(from: timeZoneComponents)
+        let events = buildEvents(from: eventComponents, timeZones: timeZones)
 
         return ICalendar(
             calendarScale: calendarScale,
             events: events,
             method: method,
-            productId: prodId
-//            timeZones: timezones
+            productId: prodId,
+            timeZones: timeZones
         )
     }
 
@@ -164,7 +164,8 @@ public struct ICParser {
     // MARK: - Build functions
 
     private func buildEvents(
-        from components: [ICComponent]
+        from components: [ICComponent],
+        timeZones: [ICTimeZone]
     ) -> [ICEvent] {
 
         return components.map { component -> ICEvent in
@@ -174,14 +175,14 @@ public struct ICParser {
             event.classification = component.buildProperty(of: Constant.Property.classification)
             event.description = component.buildText(of: Constant.Property.description)
             event.dtCreated = component.buildProperty(of: Constant.Property.created)?.date
-            event.dtEnd = component.buildProperty(of: Constant.Property.dtEnd)
+            event.dtEnd = component.buildDateTime(of: Constant.Property.dtEnd, timeZones: timeZones)
             event.dtStamp = component.buildProperty(of: Constant.Property.dtStamp)?.date ?? Date()
-            event.dtStart = component.buildProperty(of: Constant.Property.dtStart)
+            event.dtStart = component.buildDateTime(of: Constant.Property.dtStart, timeZones: timeZones)
             event.lastModified = component.buildProperty(of: Constant.Property.lastModified)?.date
             event.location = component.buildText(of: Constant.Property.location)
             event.organizer = component.buildProperty(of: Constant.Property.organizer)
             event.priority = component.buildProperty(of: Constant.Property.priority)
-            event.recurrenceId = component.buildProperty(of: Constant.Property.recurrenceId)
+            event.recurrenceId = component.buildDateTime(of: Constant.Property.recurrenceId, timeZones: timeZones)
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)
             event.summary = component.buildText(of: Constant.Property.summary)
@@ -255,11 +256,13 @@ public struct ICParser {
             )?.value
         else { return nil }
 
+        // DTSTART of an observance is local time in the offset in use before it
         guard
-            let dtStart = PropertyBuilder.buildDateTime(
-                from: (name: Constant.Property.dtStart, value: dtStartValue)
-            )?.date
+            let offsetFrom = UTCOffset.seconds(from: timeZoneOffsetFrom),
+            let wallClock = WallClock(dtStartValue)
         else { return nil }
+
+        let dtStart = wallClock.date(offset: offsetFrom)
 
         let timeZoneName: String? = component.buildProperty(of: Constant.Property.tzName)
         let rRule: ICRRule? = component.buildProperty(of: Constant.Property.recurrenceRule)
