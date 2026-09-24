@@ -45,6 +45,17 @@ struct ICComponent {
         return prop.value
     }
 
+    /// Returns an unescaped `TEXT` value from properties
+    func buildText(
+        of name: String
+    ) -> String? {
+        guard let prop = getProperty(name: name) else {
+            return nil
+        }
+
+        return PropertyBuilder.unescapeText(prop.value)
+    }
+
     /// Returns `Int` from properties
     func buildProperty(
         of name: String

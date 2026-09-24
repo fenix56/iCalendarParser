@@ -63,17 +63,41 @@ public struct ICParser {
     func getProperties(
         from ics: String
     ) -> [ICProperty] {
-        // Kept as separate statements: a single chained expression exceeds
-        // the Swift 6 type checker's complexity limit on some toolchains.
-        let lines: [String] = ics
-            .replacingOccurrences(of: "\r\n ", with: "")
-            .components(separatedBy: "\r\n")
-
-        return lines.compactMap { line -> ICProperty? in
-            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
-            guard parts.count > 1 else { return nil }
+        return unfoldedLines(of: ics).compactMap { line -> ICProperty? in
+            let parts = line.splitOutsideQuotes(separator: ":", maxSplits: 1)
+            guard parts.count > 1, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             return (name: String(parts[0]), value: String(parts[1]))
         }
+    }
+
+    /// Splits the raw text into content lines and unfolds folded lines.
+    ///
+    /// Accepts CRLF, LF and CR line endings. A line starting with a space or
+    /// a horizontal tab continues the previous line.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.1)
+    private func unfoldedLines(
+        of ics: String
+    ) -> [String] {
+        let rawLines = ics.split(omittingEmptySubsequences: false) { character in
+            character == "\r\n" || character == "\n" || character == "\r"
+        }
+
+        var lines = [String]()
+        for rawLine in rawLines {
+            if let first = rawLine.first, first == " " || first == "\t", !lines.isEmpty {
+                lines[lines.count - 1].append(contentsOf: rawLine.dropFirst())
+            } else {
+                lines.append(String(rawLine))
+            }
+        }
+
+        if let first = lines.first, first.hasPrefix("\u{FEFF}") {
+            lines[0] = String(first.dropFirst())
+        }
+
+        return lines
     }
 
     private func getProperty(
@@ -98,41 +122,39 @@ public struct ICParser {
     ) -> [ICComponent] {
 
         var found = [ICComponent]()
-        var currentComponent: [(String, String)]?
-        var childComponent: [(String, String)]?
+        var properties: [ICProperty]?
+        var childProperties = [ICProperty]()
+        // Nesting depth of child components (e.g. VALARM) inside the current component
+        var depth = 0
 
         for element in elements {
-            if element.name == Constant.Property.begin,
-                element.value == name {
-                if currentComponent == nil {
-                    currentComponent = []
+            guard properties != nil else {
+                if element.name == Constant.Property.begin, element.value == name {
+                    properties = [element]
+                    childProperties = []
+                    depth = 0
                 }
+                continue
             }
 
-            if currentComponent != nil {
-                if element.name == Constant.Property.begin,
-                   element.value != name,
-                   childComponent == nil {
-                    childComponent = []
-                }
-
-                if childComponent != nil {
-                    childComponent?.append(element)
-                } else {
-                    currentComponent?.append(element)
-                }
+            if element.name == Constant.Property.begin {
+                depth += 1
+                childProperties.append(element)
+            } else if element.name == Constant.Property.end, depth > 0 {
+                depth -= 1
+                childProperties.append(element)
+            } else if depth > 0 {
+                childProperties.append(element)
+            } else {
+                properties?.append(element)
             }
 
-            if element.name == Constant.Property.end,
-               element.value == name {
-                if let currentComponent = currentComponent {
-                    let componentElement = ICComponent(
-                        properties: currentComponent,
-                        childProperties: childComponent ?? [])
-                    found.append(componentElement)
-                }
-                currentComponent = nil
-                childComponent = nil
+            if depth == 0,
+               element.name == Constant.Property.end,
+               element.value == name,
+               let componentProperties = properties {
+                found.append(ICComponent(properties: componentProperties, childProperties: childProperties))
+                properties = nil
             }
         }
 
@@ -150,19 +172,19 @@ public struct ICParser {
 
             event.attendees = component.buildAttendees(of: Constant.Property.attendee)
             event.classification = component.buildProperty(of: Constant.Property.classification)
-            event.description = component.buildProperty(of: Constant.Property.description)
+            event.description = component.buildText(of: Constant.Property.description)
             event.dtCreated = component.buildProperty(of: Constant.Property.created)?.date
             event.dtEnd = component.buildProperty(of: Constant.Property.dtEnd)
             event.dtStamp = component.buildProperty(of: Constant.Property.dtStamp)?.date ?? Date()
             event.dtStart = component.buildProperty(of: Constant.Property.dtStart)
             event.lastModified = component.buildProperty(of: Constant.Property.lastModified)?.date
-            event.location = component.buildProperty(of: Constant.Property.location)
+            event.location = component.buildText(of: Constant.Property.location)
             event.organizer = component.buildProperty(of: Constant.Property.organizer)
             event.priority = component.buildProperty(of: Constant.Property.priority)
             event.recurrenceId = component.buildProperty(of: Constant.Property.recurrenceId)
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)
-            event.summary = component.buildProperty(of: Constant.Property.summary)
+            event.summary = component.buildText(of: Constant.Property.summary)
             event.timeTransparency = component.buildProperty(of: Constant.Property.timeTransparency)
             event.url = URL(string: component.buildProperty(of: Constant.Property.url) ?? "")
             event.uid = component.buildProperty(of: Constant.Property.uid) ?? ""
