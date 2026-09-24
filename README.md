@@ -42,6 +42,21 @@ let parser = ICParser()
 let calendar: ICalendar? = parser.calendar(from: rawICS)
 ```
 
+### Upcoming events
+
+`occurrences(from:to:)` expands recurring events and returns every occurrence in a date range, sorted by start:
+
+```swift
+let today = Calendar.current.startOfDay(for: Date())
+let nextWeek = Calendar.current.date(byAdding: .day, value: 7, to: today)!
+
+for occurrence in calendar?.occurrences(from: today, to: nextWeek) ?? [] {
+    print(occurrence.event.summary ?? "", occurrence.start, occurrence.end, occurrence.isAllDay)
+}
+```
+
+It supports every `RRULE` frequency and rule part, adds `RDATE` and removes `EXDATE` dates, replaces moved or changed occurrences with their `RECURRENCE-ID` event, takes the length from `DTEND` or `DURATION`, and skips cancelled events unless `includeCancelled` is `true`. Recurrences keep their local time across daylight saving transitions.
+
 ### Time zones
 
 By default, dates follow RFC 5545: a time without `Z` or `TZID` is local time on the device, and a `TZID` is resolved as a system time zone or with the calendar's `VTIMEZONE` definitions.

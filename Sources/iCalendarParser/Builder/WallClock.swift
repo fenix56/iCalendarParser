@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Stored as the number of seconds since `19700101T000000` on the same wall clock,
 /// so it can be compared and converted to a `Date` once the UTC offset is known.
-struct WallClock: Comparable {
+struct WallClock: Hashable, Comparable {
 
     let seconds: Int
 
@@ -87,10 +87,34 @@ struct WallClock: Comparable {
         Self.civilDate(daysSince1970: daysSince1970).day
     }
 
+    var month: Int {
+        Self.civilDate(daysSince1970: daysSince1970).month
+    }
+
+    var hour: Int {
+        secondsOfDay / 3_600
+    }
+
+    var minute: Int {
+        secondsOfDay % 3_600 / 60
+    }
+
+    var second: Int {
+        secondsOfDay % 60
+    }
+
     /// Day of the week, 1 (Sunday) to 7 (Saturday), matching `ICRRule.DayOfWeek.weekday`
     var weekday: Int {
+        Self.weekday(daysSince1970: daysSince1970)
+    }
+
+    static func weekday(daysSince1970 days: Int) -> Int {
         // 1970-01-01 was a Thursday
-        ((daysSince1970 % 7 + 7) % 7 + 4) % 7 + 1
+        ((days % 7 + 7) % 7 + 4) % 7 + 1
+    }
+
+    func adding(days: Int = 0, seconds: Int = 0) -> WallClock {
+        WallClock(seconds: self.seconds + days * Self.secondsPerDay + seconds)
     }
 
     // MARK: - Conversion

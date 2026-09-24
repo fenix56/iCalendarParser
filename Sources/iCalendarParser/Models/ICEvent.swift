@@ -77,18 +77,18 @@ public struct ICEvent: ICComponentable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.4)
     public var dtStart: ICDateTime?
 
-    // A positive duration of time.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.5)
-    // var duration: ICDuration?
+    /// A positive duration of time, used instead of `dtEnd` to define the event's length.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.5)
+    public var duration: ICDuration?
 
-    // The list of DATE-TIME exceptions for recurring events, to-dos, journal entries,
-    // or time zone definitions.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.1)
-    // var exceptionDates: [Date]?
+    /// The list of DATE-TIME exceptions for recurring events, to-dos, journal entries,
+    /// or time zone definitions (`EXDATE`).
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.1)
+    public var exceptionDates: [ICDateTime]
 
     // Specifies information related to the global position for the activity specified by
     // a calendar component.
@@ -139,11 +139,12 @@ public struct ICEvent: ICComponentable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.4)
     public var recurrenceId: ICDateTime?
 
-    // The list of DATE-TIME values for recurring events, to-dos, journal entries, or time zone definitions.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.2)
-    // var recurrenceDates: [ICDateTime]?
+    /// The list of DATE-TIME values for recurring events, to-dos, journal entries, or time zone
+    /// definitions (`RDATE`), in addition to those defined by `recurrenceRule`.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.2)
+    public var recurrenceDates: [ICDateTime]
 
     // A rule or repeating pattern for recurring events, to-dos, journal entries, or time zone definitions.
     //
@@ -201,12 +202,16 @@ public struct ICEvent: ICComponentable {
         dtEnd: ICDateTime? = nil,
         dtStamp: Date = Date(),
         dtStart: ICDateTime? = nil,
+        duration: ICDuration? = nil,
+        exceptionDates: [ICDateTime] = [],
         lastModified: Date? = nil,
         location: String? = nil,
         nonStandardProperties: [String: String]? = nil,
         organizer: String? = nil,
         priority: Int? = nil,
+        recurrenceDates: [ICDateTime] = [],
         recurrenceId: ICDateTime? = nil,
+        recurrenceRule: ICRRule? = nil,
         sequence: Int? = nil,
         status: String? = nil,
         summary: String? = nil,
@@ -221,12 +226,16 @@ public struct ICEvent: ICComponentable {
         self.dtEnd = dtEnd
         self.dtStamp = dtStamp
         self.dtStart = dtStart
+        self.duration = duration
+        self.exceptionDates = exceptionDates
         self.lastModified = lastModified
         self.location = location
         self.nonStandardProperties = nonStandardProperties
         self.organizer = organizer
         self.priority = priority
+        self.recurrenceDates = recurrenceDates
         self.recurrenceId = recurrenceId
+        self.recurrenceRule = recurrenceRule
         self.sequence = sequence
         self.status = status
         self.summary = summary

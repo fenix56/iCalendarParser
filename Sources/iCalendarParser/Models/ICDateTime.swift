@@ -16,6 +16,9 @@ public struct ICDateTime {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.5)
     public var isFloating: Bool
 
+    /// The zone the value was resolved in when parsed; nil for a value created in code
+    var zone: DateTimeZone?
+
     public init(
         date: Date,
         type: DateTimeType,
@@ -42,4 +45,11 @@ public struct ICDateTime {
     }
 }
 
-extension ICDateTime: Equatable {}
+extension ICDateTime: Equatable {
+    public static func == (lhs: ICDateTime, rhs: ICDateTime) -> Bool {
+        lhs.date == rhs.date
+        && lhs.type == rhs.type
+        && lhs.tzId == rhs.tzId
+        && lhs.isFloating == rhs.isFloating
+    }
+}

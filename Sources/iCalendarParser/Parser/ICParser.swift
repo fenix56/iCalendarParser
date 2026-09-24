@@ -197,6 +197,14 @@ public struct ICParser {
                 component.buildDateTime(of: name, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
             }
 
+            func dateTimes(_ name: String) -> [ICDateTime] {
+                PropertyBuilder.buildDateTimes(
+                    from: component.getProperties(name: name) ?? [],
+                    timeZones: timeZones,
+                    timeZoneHandling: timeZoneHandling
+                )
+            }
+
             event.attendees = component.buildAttendees(of: Constant.Property.attendee)
             event.classification = component.buildProperty(of: Constant.Property.classification)
             event.description = component.buildText(of: Constant.Property.description)
@@ -204,10 +212,13 @@ public struct ICParser {
             event.dtEnd = dateTime(Constant.Property.dtEnd)
             event.dtStamp = dateTime(Constant.Property.dtStamp)?.date ?? Date()
             event.dtStart = dateTime(Constant.Property.dtStart)
+            event.duration = component.buildProperty(of: Constant.Property.duration).flatMap(ICDuration.init)
+            event.exceptionDates = dateTimes(Constant.Property.exceptionDates)
             event.lastModified = dateTime(Constant.Property.lastModified)?.date
             event.location = component.buildText(of: Constant.Property.location)
             event.organizer = component.buildProperty(of: Constant.Property.organizer)
             event.priority = component.buildProperty(of: Constant.Property.priority)
+            event.recurrenceDates = dateTimes(Constant.Property.recurrenceDates)
             event.recurrenceId = dateTime(Constant.Property.recurrenceId)
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)

@@ -24,35 +24,84 @@ struct PropertyBuilder {
             return nil
         }
 
-        switch getDateTimeType(from: params, value: value) {
-        case .date:
-            return .date(from: wallClock.date(in: .current))
-        case .dateTime:
-            if isUTC {
-                return .dateTime(from: wallClock.date(offset: 0))
-            }
+        let type = getDateTimeType(from: params, value: value)
+        // A TZID is ignored for DATE values and for UTC times
+        let tzid = type == .dateTime && !isUTC ? getTimeZoneId(from: params) : nil
+        let zone = resolveZone(
+            type: type,
+            isUTC: isUTC,
+            tzid: tzid,
+            timeZones: timeZones,
+            timeZoneHandling: timeZoneHandling
+        )
 
-            guard let tzid = getTimeZoneId(from: params) else {
-                let date = timeZoneHandling == .legacy ? wallClock.date(offset: 0) : wallClock.date(in: .current)
-                return ICDateTime(date: date, type: .dateTime, isFloating: true)
-            }
+        var dateTime = ICDateTime(
+            date: (zone ?? .system(.current)).date(for: wallClock),
+            type: type,
+            tzId: tzid,
+            isFloating: type == .dateTime && !isUTC && (tzid == nil || zone == nil)
+        )
+        dateTime.zone = zone ?? .system(.current)
+        return dateTime
+    }
 
-            let timeZone = timeZoneHandling == .legacy
-                ? TimeZone(identifier: tzid)
-                : TimeZoneResolver.timeZone(for: tzid)
-
-            if let timeZone {
-                return .dateTime(from: wallClock.date(in: timeZone), tzId: tzid)
-            }
-
-            if timeZoneHandling == .standard,
-               let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
-               let date = definition.date(for: wallClock) {
-                return .dateTime(from: date, tzId: tzid)
-            }
-
-            return ICDateTime(date: wallClock.date(in: .current), type: .dateTime, tzId: tzid, isFloating: true)
+    /// Returns `ICDateTime` values of a list property such as `EXDATE` or `RDATE`.
+    ///
+    /// Each property may hold a comma-separated list. For a `PERIOD` value only the start is used.
+    static func buildDateTimes(
+        from props: [ICProperty],
+        timeZones: [ICTimeZone] = [],
+        timeZoneHandling: ICParser.TimeZoneHandling = .standard
+    ) -> [ICDateTime] {
+        props.flatMap { prop in
+            prop.value
+                .split(separator: ",")
+                .compactMap { item -> ICDateTime? in
+                    let start = item.split(separator: "/", maxSplits: 1).first.map(String.init) ?? ""
+                    return buildDateTime(
+                        from: (name: prop.name, value: start),
+                        timeZones: timeZones,
+                        timeZoneHandling: timeZoneHandling
+                    )
+                }
         }
+    }
+
+    /// Returns the zone for a value, or nil when a floating local time falls back to the device's time zone
+    private static func resolveZone(
+        type: DateTimeType,
+        isUTC: Bool,
+        tzid: String?,
+        timeZones: [ICTimeZone],
+        timeZoneHandling: ICParser.TimeZoneHandling
+    ) -> DateTimeZone? {
+        if type == .date {
+            return .system(.current)
+        }
+
+        if isUTC {
+            return .utc
+        }
+
+        guard let tzid else {
+            return timeZoneHandling == .legacy ? .utc : nil
+        }
+
+        let timeZone = timeZoneHandling == .legacy
+            ? TimeZone(identifier: tzid)
+            : TimeZoneResolver.timeZone(for: tzid)
+
+        if let timeZone {
+            return .system(timeZone)
+        }
+
+        if timeZoneHandling == .standard,
+           let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
+           definition.date(for: WallClock(seconds: 0)) != nil {
+            return .definition(definition)
+        }
+
+        return nil
     }
 
     // swiftlint:disable:next cyclomatic_complexity
