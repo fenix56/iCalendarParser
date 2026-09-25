@@ -32,8 +32,34 @@ public struct ICParser: Sendable {
     public func calendar(
         from raw: String
     ) -> ICalendar? {
+        parseCalendar(from: raw, checkCancellation: {})
+    }
 
-        let elements: [ICProperty] = getProperties(from: raw)
+    /// Parse strings to create ICalendar object. Returns nil if not found.
+    ///
+    /// Calls `isCancelled` regularly while parsing and throws `CancellationError`
+    /// as soon as it returns `true`. Inside a task, pass `{ Task.isCancelled }`:
+    ///
+    /// ```swift
+    /// let calendar = try parser.calendar(from: raw) { Task.isCancelled }
+    /// ```
+    public func calendar(
+        from raw: String,
+        isCancelled: () -> Bool
+    ) throws -> ICalendar? {
+        try parseCalendar(from: raw) {
+            if isCancelled() {
+                throw CancellationError()
+            }
+        }
+    }
+
+    private func parseCalendar(
+        from raw: String,
+        checkCancellation: () throws -> Void
+    ) rethrows -> ICalendar? {
+
+        let elements: [ICProperty] = try getProperties(from: raw, checkCancellation: checkCancellation)
 
         guard
             let rawValue = getProperty(
@@ -60,18 +86,22 @@ public struct ICParser: Sendable {
             from: elements
         )?.value
 
-        let timeZoneComponents = getComponents(
-            type: .timeZone,
-            from: elements
+        let timeZoneComponents = try getComponents(
+            name: ICComponentType.timeZone.name,
+            from: elements,
+            checkCancellation: checkCancellation
         )
 
-        let eventComponents = getComponents(
-            type: .event,
-            from: elements
+        let eventComponents = try getComponents(
+            name: ICComponentType.event.name,
+            from: elements,
+            checkCancellation: checkCancellation
         )
 
-        let timeZones = timeZoneHandling == .legacy ? [] : buildTimeZones(from: timeZoneComponents)
-        let events = buildEvents(from: eventComponents, timeZones: timeZones)
+        let timeZones = timeZoneHandling == .legacy
+            ? []
+            : try buildTimeZones(from: timeZoneComponents, checkCancellation: checkCancellation)
+        let events = try buildEvents(from: eventComponents, timeZones: timeZones, checkCancellation: checkCancellation)
 
         return ICalendar(
             calendarScale: calendarScale,
@@ -82,10 +112,24 @@ public struct ICParser: Sendable {
         )
     }
 
+}
+
+// MARK: - Content lines and components
+
+extension ICParser {
+
     func getProperties(
         from ics: String
     ) -> [ICProperty] {
-        return unfoldedLines(of: ics).compactMap { line -> ICProperty? in
+        getProperties(from: ics, checkCancellation: {})
+    }
+
+    func getProperties(
+        from ics: String,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICProperty] {
+        return try unfoldedLines(of: ics, checkCancellation: checkCancellation).compactMap { line -> ICProperty? in
+            try checkCancellation()
             let parts = line.splitOutsideQuotes(separator: ":", maxSplits: 1)
             guard parts.count > 1, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             return (name: String(parts[0]), value: String(parts[1]))
@@ -97,23 +141,37 @@ public struct ICParser: Sendable {
     /// Accepts CRLF, LF and CR line endings. A line starting with a space or
     /// a horizontal tab continues the previous line.
     ///
+    /// Splits and unfolds in a single pass that checks for cancellation on every line,
+    /// so a very large file can be cancelled from the start.
+    ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.1)
     private func unfoldedLines(
-        of ics: String
-    ) -> [String] {
-        let rawLines = ics.split(omittingEmptySubsequences: false) { character in
-            character == "\r\n" || character == "\n" || character == "\r"
-        }
-
+        of ics: String,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [String] {
         var lines = [String]()
-        for rawLine in rawLines {
+
+        func append(_ rawLine: Substring) {
             if let first = rawLine.first, first == " " || first == "\t", !lines.isEmpty {
                 lines[lines.count - 1].append(contentsOf: rawLine.dropFirst())
             } else {
                 lines.append(String(rawLine))
             }
         }
+
+        var lineStart = ics.startIndex
+        var index = ics.startIndex
+        while index < ics.endIndex {
+            let character = ics[index]
+            if character == "\r\n" || character == "\n" || character == "\r" {
+                try checkCancellation()
+                append(ics[lineStart..<index])
+                lineStart = ics.index(after: index)
+            }
+            index = ics.index(after: index)
+        }
+        append(ics[lineStart...])
 
         if let first = lines.first, first.hasPrefix("\u{FEFF}") {
             lines[0] = String(first.dropFirst())
@@ -132,16 +190,10 @@ public struct ICParser: Sendable {
     }
 
     private func getComponents(
-        type: ICComponentType,
-        from elements: [ICProperty]
-    ) -> [ICComponent] {
-        getComponents(name: type.name, from: elements)
-    }
-
-    private func getComponents(
         name: String,
-        from elements: [ICProperty]
-    ) -> [ICComponent] {
+        from elements: [ICProperty],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICComponent] {
 
         var found = [ICComponent]()
         var properties: [ICProperty]?
@@ -150,6 +202,8 @@ public struct ICParser: Sendable {
         var depth = 0
 
         for element in elements {
+            try checkCancellation()
+
             guard properties != nil else {
                 if element.name == Constant.Property.begin, element.value == name {
                     properties = [element]
@@ -183,14 +237,21 @@ public struct ICParser: Sendable {
         return found
     }
 
-    // MARK: - Build functions
+}
+
+// MARK: - Build functions
+
+extension ICParser {
 
     private func buildEvents(
         from components: [ICComponent],
-        timeZones: [ICTimeZone]
-    ) -> [ICEvent] {
+        timeZones: [ICTimeZone],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICEvent] {
 
-        return components.map { component -> ICEvent in
+        return try components.map { component -> ICEvent in
+            try checkCancellation()
+
             var event = ICEvent()
 
             func dateTime(_ name: String) -> ICDateTime? {
@@ -238,9 +299,12 @@ public struct ICParser: Sendable {
     }
 
     private func buildTimeZones(
-        from components: [ICComponent]
-    ) -> [ICTimeZone] {
-        return components.compactMap { component -> ICTimeZone? in
+        from components: [ICComponent],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICTimeZone] {
+        return try components.compactMap { component -> ICTimeZone? in
+            try checkCancellation()
+
             guard
                 let tzid = component.getProperty(
                     name: Constant.Property.tzId
@@ -252,7 +316,8 @@ public struct ICParser: Sendable {
 
             let standardComponent = getComponents(
                 name: Constant.Component.standard,
-                from: component.childProperties
+                from: component.childProperties,
+                checkCancellation: {}
             ).first
 
             if let standardComponent,
@@ -262,7 +327,8 @@ public struct ICParser: Sendable {
 
             let daylightComponent = getComponents(
                 name: Constant.Component.daylight,
-                from: component.childProperties
+                from: component.childProperties,
+                checkCancellation: {}
             ).first
 
             if let daylightComponent,

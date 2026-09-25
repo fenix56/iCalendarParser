@@ -86,12 +86,14 @@ struct RecurrenceExpander {
     ///   - skipBefore: without `COUNT`, periods before this time may be skipped
     ///   - limit: stops after this time
     ///   - until: the inclusive end of the series in wall-clock time (`UNTIL`)
+    ///   - checkCancellation: called once per period; throws to stop expanding
     func forEachStart(
         skipBefore: WallClock?,
         limit: WallClock,
         until: WallClock?,
+        checkCancellation: () throws -> Void = {},
         _ body: (WallClock) -> Void
-    ) {
+    ) rethrows {
         var remaining = count ?? .max
         guard remaining > 0, start <= limit, until.map({ start <= $0 }) ?? true else {
             return
@@ -103,6 +105,8 @@ struct RecurrenceExpander {
 
         let firstIndex = firstPeriodIndex(skipBefore: skipBefore)
         for index in firstIndex..<(firstIndex + Self.maximumPeriods) {
+            try checkCancellation()
+
             let period = period(at: index)
             guard remaining > 0, period.start <= limit else {
                 return

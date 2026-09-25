@@ -57,6 +57,21 @@ for occurrence in calendar?.occurrences(from: today, to: nextWeek) ?? [] {
 
 It supports every `RRULE` frequency and rule part, adds `RDATE` and removes `EXDATE` dates, replaces moved or changed occurrences with their `RECURRENCE-ID` event, takes the length from `DTEND` or `DURATION`, and skips cancelled events unless `includeCancelled` is `true`. Recurrences keep their local time across daylight saving transitions.
 
+### Cancellation
+
+Parsing and occurrence expansion have throwing variants that take an `isCancelled` closure. It is called regularly (for every line, component, event and recurrence step), and the call throws `CancellationError` as soon as it returns `true`. Inside a task, pass `Task.isCancelled`:
+
+```swift
+let task = Task.detached {
+    let calendar = try ICParser().calendar(from: rawICS) { Task.isCancelled }
+    return try calendar?.occurrences(from: today, to: nextWeek) { Task.isCancelled } ?? []
+}
+
+task.cancel() // stops parsing or expansion within milliseconds
+```
+
+The closure also works with other mechanisms, such as `{ workItem.isCancelled }` for a `DispatchWorkItem`.
+
 ### Time zones
 
 By default, dates follow RFC 5545: a time without `Z` or `TZID` is local time on the device, and a `TZID` is resolved as a system time zone or with the calendar's `VTIMEZONE` definitions.

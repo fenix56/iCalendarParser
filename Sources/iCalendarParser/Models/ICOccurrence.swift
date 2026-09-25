@@ -49,32 +49,79 @@ extension ICalendar {
         to end: Date,
         includeCancelled: Bool = false
     ) -> [ICOccurrence] {
+        occurrences(from: start, to: end, includeCancelled: includeCancelled, checkCancellation: {})
+    }
+
+    /// Returns the occurrences of all events that overlap `start..<end`, sorted by start.
+    ///
+    /// Works like `occurrences(from:to:includeCancelled:)`, and calls `isCancelled` regularly
+    /// while expanding recurring events. Throws `CancellationError` as soon as it returns `true`.
+    /// Inside a task, pass `{ Task.isCancelled }`:
+    ///
+    /// ```swift
+    /// let upcoming = try calendar.occurrences(from: start, to: end) { Task.isCancelled }
+    /// ```
+    public func occurrences(
+        from start: Date,
+        to end: Date,
+        includeCancelled: Bool = false,
+        isCancelled: () -> Bool
+    ) throws -> [ICOccurrence] {
+        try occurrences(from: start, to: end, includeCancelled: includeCancelled) {
+            if isCancelled() {
+                throw CancellationError()
+            }
+        }
+    }
+
+    private func occurrences(
+        from start: Date,
+        to end: Date,
+        includeCancelled: Bool,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICOccurrence] {
         guard start < end else {
             return []
         }
 
-        let series = events.filter { $0.recurrenceId == nil }
-        let overrides = events.filter { $0.recurrenceId != nil }
-        let overridesByUID = Dictionary(grouping: overrides, by: \.uid)
-        let cancelledSeries = Set(series.filter(\.isCancelled).map(\.uid))
+        // One pass to collect overrides by UID and cancelled series, without copying events
+        var overridesByUID = [String: [ICDateTime]]()
+        var cancelledSeries = Set<String>()
+        for event in events {
+            try checkCancellation()
+            if let recurrenceId = event.recurrenceId {
+                overridesByUID[event.uid, default: []].append(recurrenceId)
+            } else if event.isCancelled {
+                cancelledSeries.insert(event.uid)
+            }
+        }
 
-        let seriesOccurrences = series
-            .filter { includeCancelled || !$0.isCancelled }
-            .flatMap { event in
-                event.occurrences(
+        var occurrences = [ICOccurrence]()
+        for event in events {
+            try checkCancellation()
+            if event.recurrenceId == nil {
+                guard includeCancelled || !event.isCancelled else {
+                    continue
+                }
+                occurrences += try event.occurrences(
                     from: start,
                     to: end,
-                    replacedBy: overridesByUID[event.uid]?.compactMap(\.recurrenceId) ?? []
+                    replacedBy: overridesByUID[event.uid] ?? [],
+                    checkCancellation: checkCancellation
                 )
+            } else if includeCancelled || (!event.isCancelled && !cancelledSeries.contains(event.uid)),
+                      let occurrence = event.overrideOccurrence(from: start, to: end) {
+                occurrences.append(occurrence)
             }
-
-        let overrideOccurrences = overrides
-            .filter { includeCancelled || (!$0.isCancelled && !cancelledSeries.contains($0.uid)) }
-            .compactMap { $0.overrideOccurrence(from: start, to: end) }
-
-        return (seriesOccurrences + overrideOccurrences).sorted {
-            ($0.start, $0.end) < ($1.start, $1.end)
         }
+
+        // Sort indices rather than occurrences, which are large values; the index keeps the order stable
+        try checkCancellation()
+        let order = occurrences.indices.sorted { lhs, rhs in
+            (occurrences[lhs].start, occurrences[lhs].end, lhs) < (occurrences[rhs].start, occurrences[rhs].end, rhs)
+        }
+        try checkCancellation()
+        return order.map { occurrences[$0] }
     }
 }
 
@@ -92,10 +139,29 @@ extension ICEvent {
     /// Expands `RRULE` and `RDATE` and skips `EXDATE`. Overrides in other events
     /// (`RECURRENCE-ID`) are not applied; use `ICalendar.occurrences(from:to:includeCancelled:)` for that.
     public func occurrences(from start: Date, to end: Date) -> [ICOccurrence] {
-        occurrences(from: start, to: end, replacedBy: [])
+        occurrences(from: start, to: end, replacedBy: [], checkCancellation: {})
     }
 
-    func occurrences(from start: Date, to end: Date, replacedBy overrides: [ICDateTime]) -> [ICOccurrence] {
+    /// Returns the occurrences of this event that overlap `start..<end`, sorted by start.
+    ///
+    /// Works like `occurrences(from:to:)`, and calls `isCancelled` regularly while expanding.
+    /// Throws `CancellationError` as soon as it returns `true`.
+    public func occurrences(from start: Date, to end: Date, isCancelled: () -> Bool) throws -> [ICOccurrence] {
+        try occurrences(from: start, to: end, replacedBy: []) {
+            if isCancelled() {
+                throw CancellationError()
+            }
+        }
+    }
+
+    func occurrences(
+        from start: Date,
+        to end: Date,
+        replacedBy overrides: [ICDateTime],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICOccurrence] {
+        try checkCancellation()
+
         guard let dtStart, start < end else {
             return []
         }
@@ -104,8 +170,9 @@ extension ICEvent {
         let span = OccurrenceSpan(event: self, dtStart: dtStart)
         let excluded = exceptionDates + overrides
 
-        return seriesStarts(from: start, to: end, zone: zone, span: span)
+        return try seriesStarts(from: start, to: end, zone: zone, span: span, checkCancellation: checkCancellation)
             .compactMap { wallClock -> ICOccurrence? in
+                try checkCancellation()
                 let occurrenceStart = zone.date(for: wallClock)
                 guard !excluded.contains(where: { matches($0, wallClock: wallClock, date: occurrenceStart) }) else {
                     return nil
@@ -151,7 +218,13 @@ extension ICEvent {
     // MARK: - Private
 
     /// Wall-clock starts of the series from `RRULE`, `RDATE` and `DTSTART`, in order and without duplicates
-    private func seriesStarts(from start: Date, to end: Date, zone: DateTimeZone, span: OccurrenceSpan) -> [WallClock] {
+    private func seriesStarts(
+        from start: Date,
+        to end: Date,
+        zone: DateTimeZone,
+        span: OccurrenceSpan,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [WallClock] {
         guard let dtStart else {
             return []
         }
@@ -166,8 +239,12 @@ extension ICEvent {
             let until = recurrenceRule.until.map { untilWallClock($0, zone: zone) }
 
             starts = []
-            RecurrenceExpander(rule: recurrenceRule, start: startWall)
-                .forEachStart(skipBefore: skipBefore, limit: limit, until: until) { starts.append($0) }
+            try RecurrenceExpander(rule: recurrenceRule, start: startWall).forEachStart(
+                skipBefore: skipBefore,
+                limit: limit,
+                until: until,
+                checkCancellation: checkCancellation
+            ) { starts.append($0) }
         }
 
         starts += recurrenceDates.map { recurrenceDate in
