@@ -42,6 +42,9 @@ let parser = ICParser()
 let calendar: ICalendar? = parser.calendar(from: rawICS)
 ```
 
+See the [usage guide](Documentation/Usage.md) for time zones, occurrences, multi-day events,
+cancellation and migrating from 0.3.0.
+
 ### Upcoming events
 
 `occurrences(from:to:)` expands recurring events and returns every occurrence in a date range, sorted by start:
