@@ -139,6 +139,13 @@ public struct ICEvent: ICComponentable, Sendable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.4)
     public var recurrenceId: ICDateTime?
 
+    /// `true` when `RECURRENCE-ID` has `RANGE=THISANDFUTURE`: the changes in this event apply to
+    /// the occurrence it identifies and to every later occurrence of the recurring event.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.2.13)
+    public var appliesToFutureOccurrences: Bool
+
     /// The list of DATE-TIME values for recurring events, to-dos, journal entries, or time zone
     /// definitions (`RDATE`), in addition to those defined by `recurrenceRule`.
     ///
@@ -195,6 +202,7 @@ public struct ICEvent: ICComponentable, Sendable {
     public var url: URL?
 
     public init(
+        appliesToFutureOccurrences: Bool = false,
         attendees: [ICAttendee]? = nil,
         classification: String? = nil,
         description: String? = nil,
@@ -219,6 +227,7 @@ public struct ICEvent: ICComponentable, Sendable {
         uid: String = UUID().uuidString,
         url: URL? = nil
     ) {
+        self.appliesToFutureOccurrences = appliesToFutureOccurrences
         self.attendees = attendees
         self.classification = classification
         self.description = description
@@ -245,9 +254,15 @@ public struct ICEvent: ICComponentable, Sendable {
     }
 }
 
-/// Two events are equal when all their properties are equal.
-/// Use `id` to find the same event in different versions of a calendar.
-extension ICEvent: Equatable {}
+/// Two events are equal when they have the same `UID`.
+///
+/// A recurring event and the events that change single occurrences of it share a `UID`,
+/// so they are equal. Use `id`, which adds `RECURRENCE-ID`, to tell them apart.
+extension ICEvent: Equatable {
+    public static func == (lhs: ICEvent, rhs: ICEvent) -> Bool {
+        lhs.uid == rhs.uid
+    }
+}
 
 extension ICEvent: Identifiable {
 

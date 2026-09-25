@@ -80,6 +80,8 @@ extension Constant {
         static let priority: String = "PRIORITY"
         static let recurrenceDates: String = "RDATE"
         static let recurrenceId: String = "RECURRENCE-ID"
+        static let range: String = "RANGE"
+        static let thisAndFuture: String = "THISANDFUTURE"
         static let recurrenceRule: String = "RRULE"
         static let sequence: String = "SEQUENCE"
         static let status: String = "STATUS"

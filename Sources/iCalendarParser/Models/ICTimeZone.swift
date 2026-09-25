@@ -52,9 +52,12 @@ public struct ICTimeZone: ICComponentable, Sendable {
     }
 }
 
-/// Two time zones are equal when all their properties are equal.
-/// Use `id` to find the same time zone in different versions of a calendar.
-extension ICTimeZone: Equatable {}
+/// Two time zones are equal when they have the same `TZID`.
+extension ICTimeZone: Equatable {
+    public static func == (lhs: ICTimeZone, rhs: ICTimeZone) -> Bool {
+        lhs.timeZoneId == rhs.timeZoneId
+    }
+}
 
 extension ICTimeZone: Identifiable {
     public var id: String {

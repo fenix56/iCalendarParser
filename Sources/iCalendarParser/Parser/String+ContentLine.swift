@@ -13,20 +13,26 @@ extension String {
         separator: Character,
         maxSplits: Int = .max
     ) -> [Substring] {
+        // Separators are ASCII, so the UTF-8 bytes can be scanned without decoding characters
+        guard let separatorByte = separator.asciiValue else {
+            return [self[...]]
+        }
+
+        let quote = UInt8(ascii: "\"")
         var parts = [Substring]()
         var start = startIndex
         var isQuoted = false
-        var index = startIndex
+        var index = utf8.startIndex
 
-        while index < endIndex {
-            let character = self[index]
-            if character == "\"" {
+        while index < utf8.endIndex {
+            let byte = utf8[index]
+            if byte == quote {
                 isQuoted.toggle()
-            } else if character == separator, !isQuoted, parts.count < maxSplits {
+            } else if byte == separatorByte, !isQuoted, parts.count < maxSplits {
                 parts.append(self[start..<index])
-                start = self.index(after: index)
+                start = utf8.index(after: index)
             }
-            index = self.index(after: index)
+            index = utf8.index(after: index)
         }
 
         parts.append(self[start...])

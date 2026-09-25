@@ -17,7 +17,7 @@ struct PropertyBuilder {
         timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
-        let isUTC = prop.value.hasSuffix("Z")
+        let isUTC = prop.value.utf8.last == UInt8(ascii: "Z")
         let value = isUTC ? String(prop.value.dropLast()) : prop.value
 
         guard let wallClock = WallClock(value) else {
@@ -183,6 +183,14 @@ struct PropertyBuilder {
         }
     }
 
+    /// Returns the value of a parameter of a property, e.g. `RANGE` of `RECURRENCE-ID;RANGE=THISANDFUTURE`
+    static func parameter(
+        _ name: String,
+        of prop: ICProperty
+    ) -> String? {
+        getParamsOfValue(from: prop.name).first { $0.name.uppercased() == name }?.value
+    }
+
     /// Returns the value of a `TEXT` property with escaped characters restored.
     ///
     /// `\n` and `\N` become a line break; `\\`, `\;` and `\,` become the
@@ -193,34 +201,41 @@ struct PropertyBuilder {
     static func unescapeText(
         _ value: String
     ) -> String {
-        var result = ""
-        result.reserveCapacity(value.count)
+        guard value.utf8.contains(UInt8(ascii: "\\")) else {
+            return value
+        }
+
+        // Escapes are ASCII, so the UTF-8 bytes can be processed without decoding characters
+        let backslash = UInt8(ascii: "\\")
+        var result = [UInt8]()
+        result.reserveCapacity(value.utf8.count)
         var isEscaped = false
 
-        for character in value {
+        for byte in value.utf8 {
             if isEscaped {
-                switch character {
-                case "n", "N":
-                    result.append("\n")
-                case "\\", ";", ",":
-                    result.append(character)
+                switch byte {
+                case UInt8(ascii: "n"), UInt8(ascii: "N"):
+                    result.append(UInt8(ascii: "\n"))
+                case backslash, UInt8(ascii: ";"), UInt8(ascii: ","):
+                    result.append(byte)
                 default:
-                    result.append("\\")
-                    result.append(character)
+                    result.append(backslash)
+                    result.append(byte)
                 }
                 isEscaped = false
-            } else if character == "\\" {
+            } else if byte == backslash {
                 isEscaped = true
             } else {
-                result.append(character)
+                result.append(byte)
             }
         }
 
         if isEscaped {
-            result.append("\\")
+            result.append(backslash)
         }
 
-        return result
+        // Only ASCII escapes were changed in valid UTF-8, so decoding cannot fail
+        return String(decoding: result, as: UTF8.self) // swiftlint:disable:this optional_data_string_conversion
     }
 
     // MARK: - Private functions
@@ -235,10 +250,14 @@ struct PropertyBuilder {
         return value
             .splitOutsideQuotes(separator: ";")
             .compactMap { param -> ICProperty? in
-                let parts = param.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-                guard parts.count > 1 else { return nil }
-                let paramValue = parts[1].replacingOccurrences(of: "\"", with: "")
-                return (name: String(parts[0]), value: paramValue)
+                guard let equals = param.utf8.firstIndex(of: UInt8(ascii: "=")) else {
+                    return nil
+                }
+                let paramValue = param[param.utf8.index(after: equals)...]
+                let unquoted = paramValue.utf8.contains(UInt8(ascii: "\""))
+                    ? String(paramValue.filter { $0 != "\"" })
+                    : String(paramValue)
+                return (name: String(param[..<equals]), value: unquoted)
             }
     }
 

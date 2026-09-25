@@ -38,6 +38,8 @@ extension ICalendar {
     /// - Recurring events are expanded from `RRULE` and `RDATE`, without the dates in `EXDATE`.
     /// - An event with `RECURRENCE-ID` replaces the occurrence of the recurring event with the
     ///   same `UID` that originally started at that time, whether or not it was moved into the range.
+    ///   With `RANGE=THISANDFUTURE` it also changes every later occurrence: they take its properties
+    ///   and length, and move by as much as it moved.
     /// - An occurrence that started before `start` and is still in progress is included.
     /// - Events with `STATUS:CANCELLED`, and occurrences replaced by one, are skipped unless
     ///   `includeCancelled` is `true`.
@@ -86,11 +88,15 @@ extension ICalendar {
 
         // One pass to collect overrides by UID and cancelled series, without copying events
         var overridesByUID = [String: [ICDateTime]]()
+        var futureOverridesByUID = [String: [ICEvent]]()
         var cancelledSeries = Set<String>()
         for event in events {
             try checkCancellation()
             if let recurrenceId = event.recurrenceId {
                 overridesByUID[event.uid, default: []].append(recurrenceId)
+                if event.appliesToFutureOccurrences {
+                    futureOverridesByUID[event.uid, default: []].append(event)
+                }
             } else if event.isCancelled {
                 cancelledSeries.insert(event.uid)
             }
@@ -103,10 +109,15 @@ extension ICalendar {
                 guard includeCancelled || !event.isCancelled else {
                     continue
                 }
+                let seriesOverrides = SeriesOverrides(
+                    replaced: overridesByUID[event.uid] ?? [],
+                    future: futureOverridesByUID[event.uid] ?? [],
+                    includeCancelled: includeCancelled
+                )
                 occurrences += try event.occurrences(
                     from: start,
                     to: end,
-                    replacedBy: overridesByUID[event.uid] ?? [],
+                    overrides: seriesOverrides,
                     checkCancellation: checkCancellation
                 )
             } else if includeCancelled || (!event.isCancelled && !cancelledSeries.contains(event.uid)),
@@ -127,6 +138,21 @@ extension ICalendar {
 
 // MARK: - Event
 
+/// The other events of a recurring event's `UID` that change its occurrences
+struct SeriesOverrides {
+
+    /// `RECURRENCE-ID` values of all events that replace an occurrence
+    let replaced: [ICDateTime]
+
+    /// Events with `RANGE=THISANDFUTURE`, which also change later occurrences
+    let future: [ICEvent]
+
+    /// Whether occurrences cancelled by a future change are kept
+    let includeCancelled: Bool
+
+    static let empty = SeriesOverrides(replaced: [], future: [], includeCancelled: true)
+}
+
 extension ICEvent {
 
     /// `true` when `STATUS` is `CANCELLED`
@@ -139,7 +165,7 @@ extension ICEvent {
     /// Expands `RRULE` and `RDATE` and skips `EXDATE`. Overrides in other events
     /// (`RECURRENCE-ID`) are not applied; use `ICalendar.occurrences(from:to:includeCancelled:)` for that.
     public func occurrences(from start: Date, to end: Date) -> [ICOccurrence] {
-        occurrences(from: start, to: end, replacedBy: [], checkCancellation: {})
+        occurrences(from: start, to: end, overrides: .empty, checkCancellation: {})
     }
 
     /// Returns the occurrences of this event that overlap `start..<end`, sorted by start.
@@ -147,7 +173,7 @@ extension ICEvent {
     /// Works like `occurrences(from:to:)`, and calls `isCancelled` regularly while expanding.
     /// Throws `CancellationError` as soon as it returns `true`.
     public func occurrences(from start: Date, to end: Date, isCancelled: () -> Bool) throws -> [ICOccurrence] {
-        try occurrences(from: start, to: end, replacedBy: []) {
+        try occurrences(from: start, to: end, overrides: .empty) {
             if isCancelled() {
                 throw CancellationError()
             }
@@ -157,7 +183,7 @@ extension ICEvent {
     func occurrences(
         from start: Date,
         to end: Date,
-        replacedBy overrides: [ICDateTime],
+        overrides: SeriesOverrides,
         checkCancellation: () throws -> Void
     ) rethrows -> [ICOccurrence] {
         try checkCancellation()
@@ -168,26 +194,48 @@ extension ICEvent {
 
         let zone = dtStart.resolvedZone
         let span = OccurrenceSpan(event: self, dtStart: dtStart)
-        let excluded = exceptionDates + overrides
+        let excluded = exceptionDates + overrides.replaced
+        let changes = overrides.future
+            .compactMap { FutureChange(override: $0, zone: zone, seriesSpan: span) }
+            .sorted { $0.originalStart < $1.originalStart }
 
-        return try seriesStarts(from: start, to: end, zone: zone, span: span, checkCancellation: checkCancellation)
-            .compactMap { wallClock -> ICOccurrence? in
-                try checkCancellation()
-                let occurrenceStart = zone.date(for: wallClock)
-                guard !excluded.contains(where: { matches($0, wallClock: wallClock, date: occurrenceStart) }) else {
-                    return nil
-                }
-                let occurrenceEnd = span.end(from: wallClock, start: occurrenceStart, zone: zone)
-                guard Self.overlaps(occurrenceStart, occurrenceEnd, start, end) else {
-                    return nil
-                }
-                return ICOccurrence(
-                    event: self,
-                    start: occurrenceStart,
-                    end: occurrenceEnd,
-                    originalStart: occurrenceStart
-                )
+        // Later occurrences may move into or out of the range by as much as a change moved them
+        let margin = TimeInterval(changes.map { abs($0.shift) + $0.span.maximumSeconds }.max() ?? 0)
+        let starts = try seriesStarts(
+            from: start.addingTimeInterval(-margin),
+            to: end.addingTimeInterval(margin),
+            zone: zone,
+            span: span,
+            checkCancellation: checkCancellation
+        )
+
+        return try starts.compactMap { wallClock -> ICOccurrence? in
+            try checkCancellation()
+            let originalStart = zone.date(for: wallClock)
+            guard !excluded.contains(where: { matches($0, wallClock: wallClock, date: originalStart) }) else {
+                return nil
             }
+
+            // The latest change at or before this occurrence applies to it
+            let change = changes.last { $0.originalStart <= originalStart }
+            if let change, change.override.isCancelled, !overrides.includeCancelled {
+                return nil
+            }
+
+            let shiftedWallClock = wallClock.adding(seconds: change?.shift ?? 0)
+            let occurrenceStart = change == nil ? originalStart : zone.date(for: shiftedWallClock)
+            let occurrenceEnd = (change?.span ?? span).end(from: shiftedWallClock, start: occurrenceStart, zone: zone)
+            guard Self.overlaps(occurrenceStart, occurrenceEnd, start, end) else {
+                return nil
+            }
+
+            return ICOccurrence(
+                event: change?.override ?? self,
+                start: occurrenceStart,
+                end: occurrenceEnd,
+                originalStart: originalStart
+            )
+        }
     }
 
     /// The occurrence of an event that overrides one occurrence of a series
@@ -281,48 +329,5 @@ extension ICEvent {
             return false
         }
         return start == end ? start >= rangeStart : end > rangeStart
-    }
-}
-
-// MARK: - Span
-
-/// The length of each occurrence, from `DTEND` or `DURATION`
-private struct OccurrenceSpan {
-
-    private let isAllDay: Bool
-    private let days: Int
-    private let seconds: Int
-
-    init(event: ICEvent, dtStart: ICDateTime) {
-        isAllDay = dtStart.type == .date
-
-        if let dtEnd = event.dtEnd {
-            if isAllDay {
-                days = dtEnd.wallClock.daysSince1970 - dtStart.wallClock.daysSince1970
-                seconds = 0
-            } else {
-                days = 0
-                seconds = Int(dtEnd.date.timeIntervalSince(dtStart.date))
-            }
-        } else if let duration = event.duration {
-            days = duration.nominalDays
-            seconds = duration.exactSeconds
-        } else {
-            // Without DTEND or DURATION an all-day event lasts one day and a timed event has no length
-            days = isAllDay ? 1 : 0
-            seconds = 0
-        }
-    }
-
-    /// An upper bound for the length in seconds
-    var maximumSeconds: Int {
-        max(0, days * WallClock.secondsPerDay + seconds) + WallClock.secondsPerDay
-    }
-
-    func end(from wallClock: WallClock, start: Date, zone: DateTimeZone) -> Date {
-        let end = days == 0
-            ? start.addingTimeInterval(TimeInterval(seconds))
-            : zone.date(for: wallClock.adding(days: days)).addingTimeInterval(TimeInterval(seconds))
-        return max(start, end)
     }
 }

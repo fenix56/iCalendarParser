@@ -37,28 +37,32 @@ final class ModelConformanceTests: XCTestCase {
         XCTAssertEqual(first.timeZones, second.timeZones)
     }
 
-    func testEventsWithSameUIDAreNotEqualWhenTheyDiffer() throws {
+    func testEventsWithSameUIDAreEqual() throws {
         let events = try parse().events
 
-        XCTAssertNotEqual(events[0], events[1])
-        XCTAssertNotEqual(events[2], events[3])
+        // The recurring event and its changed occurrence share a UID, and so do the events without one
+        XCTAssertEqual(events[0], events[1])
+        XCTAssertEqual(events[2], events[3])
+        XCTAssertNotEqual(events[0], events[2])
     }
 
-    func testChangedPropertyMakesEventsDifferent() throws {
+    func testChangedPropertyKeepsEventsEqual() throws {
         let event = try XCTUnwrap(try parse().events.first)
         var changed = event
         changed.location = "Room 2"
+        var otherUID = event
+        otherUID.uid = "other"
 
-        XCTAssertNotEqual(event, changed)
-        XCTAssertEqual(event.id, changed.id)
+        XCTAssertEqual(event, changed)
+        XCTAssertNotEqual(event, otherUID)
     }
 
-    func testChangedDefinitionMakesTimeZonesDifferent() throws {
+    func testTimeZonesWithSameIdentifierAreEqual() throws {
         let timeZone = try XCTUnwrap(try parse().uniqueTimeZone)
         var changed = timeZone
         changed.standard?.timeZoneOffsetTo = "+0200"
 
-        XCTAssertNotEqual(timeZone, changed)
+        XCTAssertEqual(timeZone, changed)
         XCTAssertEqual(timeZone.id, changed.id)
     }
 

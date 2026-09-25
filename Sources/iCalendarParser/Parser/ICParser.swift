@@ -128,65 +128,14 @@ extension ICParser {
         from ics: String,
         checkCancellation: () throws -> Void
     ) rethrows -> [ICProperty] {
-        return try unfoldedLines(of: ics, checkCancellation: checkCancellation).compactMap { line -> ICProperty? in
-            try checkCancellation()
-            let parts = line.splitOutsideQuotes(separator: ":", maxSplits: 1)
-            guard parts.count > 1, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
-            return (name: String(parts[0]), value: String(parts[1]))
-        }
-    }
-
-    /// Splits the raw text into content lines and unfolds folded lines.
-    ///
-    /// Accepts CRLF, LF and CR line endings. A line starting with a space or
-    /// a horizontal tab continues the previous line.
-    ///
-    /// Splits and unfolds in a single pass that checks for cancellation on every line,
-    /// so a very large file can be cancelled from the start.
-    ///
-    /// See more in [RFC 5545](
-    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.1)
-    private func unfoldedLines(
-        of ics: String,
-        checkCancellation: () throws -> Void
-    ) rethrows -> [String] {
-        var lines = [String]()
-
-        func append(_ rawLine: Substring) {
-            if let first = rawLine.first, first == " " || first == "\t", !lines.isEmpty {
-                lines[lines.count - 1].append(contentsOf: rawLine.dropFirst())
-            } else {
-                lines.append(String(rawLine))
-            }
-        }
-
-        var lineStart = ics.startIndex
-        var index = ics.startIndex
-        while index < ics.endIndex {
-            let character = ics[index]
-            if character == "\r\n" || character == "\n" || character == "\r" {
-                try checkCancellation()
-                append(ics[lineStart..<index])
-                lineStart = ics.index(after: index)
-            }
-            index = ics.index(after: index)
-        }
-        append(ics[lineStart...])
-
-        if let first = lines.first, first.hasPrefix("\u{FEFF}") {
-            lines[0] = String(first.dropFirst())
-        }
-
-        return lines
+        try ContentLineScanner.properties(in: ics, checkCancellation: checkCancellation)
     }
 
     private func getProperty(
         name: String,
         from elements: [ICProperty]
     ) -> ICProperty? {
-        return elements
-            .filter { $0.name.hasPrefix(name) }
-            .first
+        elements.first { $0.name.utf8.starts(with: name.utf8) }
     }
 
     private func getComponents(
@@ -252,7 +201,8 @@ extension ICParser {
         return try components.map { component -> ICEvent in
             try checkCancellation()
 
-            var event = ICEvent()
+            // UID and DTSTAMP are set below; avoid generating default values for them
+            var event = ICEvent(dtStamp: .distantPast, uid: "")
 
             func dateTime(_ name: String) -> ICDateTime? {
                 component.buildDateTime(of: name, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
@@ -281,6 +231,10 @@ extension ICParser {
             event.priority = component.buildProperty(of: Constant.Property.priority)
             event.recurrenceDates = dateTimes(Constant.Property.recurrenceDates)
             event.recurrenceId = dateTime(Constant.Property.recurrenceId)
+            event.appliesToFutureOccurrences = component
+                .getProperty(name: Constant.Property.recurrenceId)
+                .flatMap { PropertyBuilder.parameter(Constant.Property.range, of: $0) }?
+                .uppercased() == Constant.Property.thisAndFuture
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)
             event.summary = component.buildText(of: Constant.Property.summary)
