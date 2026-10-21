@@ -159,7 +159,7 @@ public struct ICRRule: Equatable, Sendable {
         self.until = until
     }
 
-    /// Returns `values` when every value is in `range`, or its magnitude is when `allowsNegative`;
+    /// Returns `values` when every value is in `range`, or in its negative when `allowsNegative`;
     /// otherwise nil, as a rule part with an invalid value is invalid as a whole
     private static func valid(
         _ values: [Int]?,
@@ -169,7 +169,9 @@ public struct ICRRule: Equatable, Sendable {
         guard let values else {
             return nil
         }
-        let isValid = values.allSatisfy { range.contains(allowsNegative ? abs($0) : $0) }
+        // Not `abs`, which overflows for `Int.min`
+        let negativeRange = -range.upperBound...(-range.lowerBound)
+        let isValid = values.allSatisfy { range.contains($0) || (allowsNegative && negativeRange.contains($0)) }
         return isValid ? values : nil
     }
 }
@@ -277,8 +279,8 @@ extension ICRRule {
         ) {
             self.dayOfWeek = dayOfWeek
 
-            // An ordinal outside 1...53 or -53...-1 is ignored
-            if let week, (1...53).contains(abs(week)) == false {
+            // An ordinal outside 1...53 or -53...-1 is ignored; not `abs`, which overflows for `Int.min`
+            if let week, !(1...53).contains(week), !(-53...(-1)).contains(week) {
                 self.week = nil
             } else {
                 self.week = week

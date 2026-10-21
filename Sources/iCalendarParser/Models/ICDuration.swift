@@ -47,7 +47,12 @@ public struct ICDuration: Equatable, Sendable {
         TimeInterval(nominalDays * 86_400 + exactSeconds)
     }
 
-    /// Parses a `DURATION` value such as `P15DT5H0M20S`, `P7W` or `-PT15M`
+    /// The largest number of each unit in a parsed value, so that converting it to seconds cannot overflow
+    private static let maximumAmount = 999_999_999
+
+    /// Parses a `DURATION` value such as `P15DT5H0M20S`, `P7W` or `-PT15M`.
+    ///
+    /// Returns nil for an invalid value, and for a number of any unit above 999,999,999.
     public init?(_ value: String) {
         var characters = Substring(value)
         let isNegative = characters.first == "-"
@@ -75,6 +80,7 @@ public struct ICDuration: Equatable, Sendable {
                 guard
                     allowed.contains(designator),
                     let amount = Int(number),
+                    amount <= Self.maximumAmount,
                     components[isTime && designator == "M" ? "m" : designator] == nil
                 else { return nil }
                 components[isTime && designator == "M" ? "m" : designator] = amount

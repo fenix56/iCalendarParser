@@ -47,15 +47,9 @@ public struct ICParser: Sendable {
         from raw: String,
         isCancelled: () -> Bool
     ) throws -> ICalendar? {
-        func checkCancellation() throws {
-            if isCancelled() {
-                throw CancellationError()
-            }
-        }
-
-        return try parseCalendar(
-            elements: getProperties(from: raw, checkCancellation: checkCancellation),
-            checkCancellation: checkCancellation
+        try parseCalendar(
+            elements: getProperties(from: raw) { try throwIfCancelled(isCancelled) },
+            checkCancellation: { try throwIfCancelled(isCancelled) }
         )
     }
 
@@ -208,6 +202,7 @@ extension ICParser {
         timeZones: [ICTimeZone],
         checkCancellation: () throws -> Void
     ) rethrows -> [ICEvent] {
+        let lookup = TimeZoneLookup(definitions: timeZones, handling: timeZoneHandling)
 
         return try components.map { component -> ICEvent in
             try checkCancellation()
@@ -216,15 +211,11 @@ extension ICParser {
             var event = ICEvent(dtStamp: .distantPast, uid: "")
 
             func dateTime(_ name: String) -> ICDateTime? {
-                component.buildDateTime(of: name, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
+                component.buildDateTime(of: name, lookup: lookup)
             }
 
             func dateTimes(_ name: String) -> [ICDateTime] {
-                PropertyBuilder.buildDateTimes(
-                    from: component.getProperties(name: name) ?? [],
-                    timeZones: timeZones,
-                    timeZoneHandling: timeZoneHandling
-                )
+                PropertyBuilder.buildDateTimes(from: component.getProperties(name: name), lookup: lookup)
             }
 
             event.attendees = component.buildAttendees(of: Constant.Property.attendee)
@@ -288,39 +279,16 @@ extension ICParser {
                 )?.value
             else { return nil }
 
-            var standard: ICSubTimeZone?
-            var daylight: ICSubTimeZone?
-
-            let standardComponent = getComponents(
-                name: Constant.Component.standard,
-                from: component.childProperties,
-                checkCancellation: {}
-            ).first
-
-            if let standardComponent,
-               let standardSubTimeZone = buildSubTimeZone(from: standardComponent) {
-                standard = standardSubTimeZone
+            func observances(_ name: String) -> [ICSubTimeZone] {
+                getComponents(name: name, from: component.childProperties, checkCancellation: {})
+                    .compactMap(buildSubTimeZone)
             }
 
-            let daylightComponent = getComponents(
-                name: Constant.Component.daylight,
-                from: component.childProperties,
-                checkCancellation: {}
-            ).first
-
-            if let daylightComponent,
-               let daylightSubTimeZone = buildSubTimeZone(from: daylightComponent) {
-                daylight = daylightSubTimeZone
-            }
-
-            let nonStandardProperties = component.getNonStandardProperties()
-
-            return ICTimeZone(
-                daylight: daylight,
-                nonStandardProperties: nonStandardProperties,
-                standard: standard,
-                timeZoneId: tzid
-            )
+            var timeZone = ICTimeZone(nonStandardProperties: component.getNonStandardProperties(), timeZoneId: tzid)
+            // A definition may have several of each, e.g. for the rules until 2006 and since 2007
+            timeZone.standardObservances = observances(Constant.Component.standard)
+            timeZone.daylightObservances = observances(Constant.Component.daylight)
+            return timeZone
         }
     }
 

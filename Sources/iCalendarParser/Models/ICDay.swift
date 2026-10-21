@@ -100,9 +100,7 @@ extension ICalendar {
         isCancelled: () -> Bool
     ) throws -> [ICDay] {
         try occurrencesByDay(from: start, days: days, calendar: calendar, includeCancelled: includeCancelled) {
-            if isCancelled() {
-                throw CancellationError()
-            }
+            try throwIfCancelled(isCancelled)
         }
     }
 

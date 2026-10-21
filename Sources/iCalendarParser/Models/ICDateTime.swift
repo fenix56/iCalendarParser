@@ -2,9 +2,29 @@ import Foundation
 
 public struct ICDateTime: Sendable {
 
-    public var date: Date
-    public var type: DateTimeType
-    public var tzId: String?
+    public var date: Date {
+        didSet {
+            if date != oldValue {
+                parsedWallClock = nil
+            }
+        }
+    }
+
+    public var type: DateTimeType {
+        didSet {
+            if type != oldValue {
+                clearParsedZone()
+            }
+        }
+    }
+
+    public var tzId: String? {
+        didSet {
+            if tzId != oldValue {
+                clearParsedZone()
+            }
+        }
+    }
 
     /// `true` for a local time that is not bound to a time zone: a `DATE-TIME` without
     /// the `Z` suffix and without a `TZID`, or with a `TZID` that could not be resolved.
@@ -14,10 +34,21 @@ public struct ICDateTime: Sendable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.5)
-    public var isFloating: Bool
+    public var isFloating: Bool {
+        didSet {
+            if isFloating != oldValue {
+                clearParsedZone()
+            }
+        }
+    }
 
-    /// The zone the value was resolved in when parsed; nil for a value created in code
+    /// The zone the value was resolved in when parsed; nil for a value created in code,
+    /// and once a property it depends on changes
     var zone: DateTimeZone?
+
+    /// The wall-clock time as written when parsed; nil for a value created in code,
+    /// and once `date` or the zone changes
+    var parsedWallClock: WallClock?
 
     public init(
         date: Date,
@@ -29,6 +60,11 @@ public struct ICDateTime: Sendable {
         self.type = type
         self.tzId = tzId
         self.isFloating = isFloating
+    }
+
+    private mutating func clearParsedZone() {
+        zone = nil
+        parsedWallClock = nil
     }
 
     public static func date(

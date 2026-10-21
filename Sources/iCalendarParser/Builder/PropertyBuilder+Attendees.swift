@@ -6,7 +6,7 @@ extension PropertyBuilder {
 
     static func buildAttendees(
         from props: [ICProperty]
-    ) -> [ICAttendee]? {
+    ) -> [ICAttendee] {
         return props.map { prop -> ICAttendee in
             var attendee = ICAttendee()
 

@@ -29,39 +29,114 @@ enum TimeZoneResolver {
     }
 }
 
+/// Resolves the `TZID` values of one calendar while it is parsed, looking up each identifier once
+final class TimeZoneLookup {
+
+    let handling: ICParser.TimeZoneHandling
+    private let definitions: [ICTimeZone]
+    private var zones = [String: DateTimeZone?]()
+
+    init(definitions: [ICTimeZone] = [], handling: ICParser.TimeZoneHandling = .standard) {
+        self.definitions = definitions
+        self.handling = handling
+    }
+
+    /// A system time zone for the identifier, or else its `VTIMEZONE` definition; nil when there is neither
+    func zone(for tzId: String) -> DateTimeZone? {
+        if let zone = zones[tzId] {
+            return zone
+        }
+        let zone = resolve(tzId)
+        zones[tzId] = .some(zone)
+        return zone
+    }
+
+    private func resolve(_ tzId: String) -> DateTimeZone? {
+        let timeZone = handling == .legacy
+            ? TimeZone(identifier: tzId)
+            : TimeZoneResolver.timeZone(for: tzId)
+
+        if let timeZone {
+            return .system(timeZone)
+        }
+
+        guard
+            handling == .standard,
+            let definition = definitions.first(where: { $0.timeZoneId == tzId }),
+            definition.offset(at: Date(timeIntervalSince1970: 0)) != nil
+        else { return nil }
+
+        return .definition(definition)
+    }
+}
+
 // MARK: - VTIMEZONE evaluation
 
+// The observance in effect is the `STANDARD` or `DAYLIGHT` one with the latest onset; before all of them,
+// `TZOFFSETFROM` of the first one applies. Yearly rules with `BYMONTH` and `BYDAY` or `BYMONTHDAY` are
+// supported; an observance with any other rule counts as starting once at its `DTSTART`.
 extension ICTimeZone {
 
-    /// Returns the instant of a wall-clock time in this time zone definition.
-    ///
-    /// Uses the `STANDARD` or `DAYLIGHT` observance with the latest onset before the
-    /// given time. Yearly rules with `BYMONTH` and `BYDAY` or `BYMONTHDAY` are supported;
-    /// an observance with any other rule counts as starting once at its `DTSTART`.
-    func date(for wallClock: WallClock) -> Date? {
-        let observances = [standard, daylight].compactMap { $0 }
+    /// An observance with its offsets in seconds
+    private struct Observance {
+        let observance: ICSubTimeZone
+        let offsetFrom: Int
+        let offsetTo: Int
+    }
 
+    /// Returns the UTC offset in seconds in effect at `date`, or nil when no observance has valid offsets
+    func offset(at date: Date) -> Int? {
+        let observances = observancesWithOffsets
+
+        // An onset is a wall-clock time in the offset before it
         let latest = observances
-            .compactMap { observance -> (onset: WallClock, offset: Int)? in
-                guard
-                    let offset = UTCOffset.seconds(from: observance.timeZoneOffsetTo),
-                    let onset = observance.latestOnset(onOrBefore: wallClock)
-                else { return nil }
-                return (onset, offset)
+            .compactMap { item -> (onset: Date, offset: Int)? in
+                item.observance
+                    .latestOnset(onOrBefore: WallClock(date: date, offset: item.offsetFrom))
+                    .map { ($0.date(offset: item.offsetFrom), item.offsetTo) }
             }
             .max { $0.onset < $1.onset }
 
-        if let latest {
-            return wallClock.date(offset: latest.offset)
+        return latest?.offset ?? Self.offsetBeforeFirst(of: observances)
+    }
+
+    /// Returns the instant of a wall-clock time, or nil when no observance has valid offsets.
+    ///
+    /// Gives the same result as `wallClock.date(offsetAt: offset(at:))` in one pass over the observances:
+    /// a time that occurs twice is its first occurrence, and a skipped time is read with the offset before the gap.
+    func date(for wallClock: WallClock) -> Date? {
+        let observances = observancesWithOffsets
+
+        let latest = observances
+            .compactMap { item -> (onset: WallClock, item: Observance)? in
+                item.observance.latestOnset(onOrBefore: wallClock).map { ($0, item) }
+            }
+            .max { $0.onset < $1.onset }
+
+        guard let latest else {
+            return Self.offsetBeforeFirst(of: observances).map { wallClock.date(offset: $0) }
         }
 
-        // The time is before every observance: use the offset in effect before the first one
-        guard
-            let earliest = observances.min(by: { $0.dtStart < $1.dtStart }),
-            let offset = UTCOffset.seconds(from: earliest.timeZoneOffsetFrom)
-        else { return nil }
+        // Clocks go forward from the onset to the onset plus the change in offset; a time repeated when
+        // they go back is before the onset, so it falls to the previous observance
+        let offsetFrom = latest.item.offsetFrom
+        let offsetTo = latest.item.offsetTo
+        let isSkipped = wallClock.seconds < latest.onset.seconds + offsetTo - offsetFrom
+        return wallClock.date(offset: isSkipped ? offsetFrom : offsetTo)
+    }
 
-        return wallClock.date(offset: offset)
+    private var observancesWithOffsets: [Observance] {
+        (standardObservances + daylightObservances).compactMap { observance in
+            guard
+                let offsetFrom = UTCOffset.seconds(from: observance.timeZoneOffsetFrom),
+                let offsetTo = UTCOffset.seconds(from: observance.timeZoneOffsetTo)
+            else { return nil }
+            return Observance(observance: observance, offsetFrom: offsetFrom, offsetTo: offsetTo)
+        }
+    }
+
+    private static func offsetBeforeFirst(of observances: [Observance]) -> Int? {
+        observances.min { $0.observance.dtStart < $1.observance.dtStart }?.offsetFrom
     }
 }
 
@@ -86,7 +161,7 @@ extension ICSubTimeZone {
 
         let until = rule.until.map { WallClock(date: $0.date, offset: 0) }
 
-        var year = target.year
+        var year = min(target.year, until?.year ?? target.year)
         while year >= start.year {
             if let onset = onset(in: year, month: month, rule: rule, start: start),
                onset <= target,

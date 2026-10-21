@@ -4,7 +4,16 @@ public struct ICTimeZone: Sendable {
 
     // MARK: - Properties
 
-    public var daylight: ICSubTimeZone?
+    /// The first `DAYLIGHT` observance. Setting it replaces or removes the first one.
+    public var daylight: ICSubTimeZone? {
+        get { daylightObservances.first }
+        set { Self.replaceFirst(of: &daylightObservances, with: newValue) }
+    }
+
+    /// Every `DAYLIGHT` observance, in the order of the calendar.
+    ///
+    /// A definition may have several, such as one for the rules until 2006 and one for those since 2007.
+    public var daylightObservances: [ICSubTimeZone]
 
     /// Any property name with a "X-" prefix
     ///
@@ -12,7 +21,16 @@ public struct ICTimeZone: Sendable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.8.2)
     public var nonStandardProperties: [String: String]?
 
-    public var standard: ICSubTimeZone?
+    /// The first `STANDARD` observance. Setting it replaces or removes the first one.
+    public var standard: ICSubTimeZone? {
+        get { standardObservances.first }
+        set { Self.replaceFirst(of: &standardObservances, with: newValue) }
+    }
+
+    /// Every `STANDARD` observance, in the order of the calendar.
+    ///
+    /// A definition may have several, such as one for the rules until 2006 and one for those since 2007.
+    public var standardObservances: [ICSubTimeZone]
 
     /// Specifies the text value that uniquely identifies the "VTIMEZONE" calendar
     /// component in the scope of an iCalendar object.
@@ -35,11 +53,20 @@ public struct ICTimeZone: Sendable {
         timeZoneId: String,
         timeZoneUrl: URL? = nil
     ) {
-        self.daylight = daylight
+        self.daylightObservances = daylight.map { [$0] } ?? []
         self.nonStandardProperties = nonStandardProperties
-        self.standard = standard
+        self.standardObservances = standard.map { [$0] } ?? []
         self.timeZoneId = timeZoneId
         self.timeZoneUrl = timeZoneUrl
+    }
+
+    private static func replaceFirst(of observances: inout [ICSubTimeZone], with observance: ICSubTimeZone?) {
+        if !observances.isEmpty {
+            observances.removeFirst()
+        }
+        if let observance {
+            observances.insert(observance, at: 0)
+        }
     }
 }
 

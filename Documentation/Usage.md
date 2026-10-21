@@ -67,7 +67,10 @@ Besides the existing properties, `ICEvent` has:
 (such as `ROOM`).
 
 `calendar.timeZones` holds the `VTIMEZONE` definitions of the calendar, `calendar.version` the
-`VERSION`, and `calendar.calendarScale` defaults to `GREGORIAN`.
+`VERSION`, and `calendar.calendarScale` defaults to `GREGORIAN`. A definition can have several
+`STANDARD` and `DAYLIGHT` observances, such as one for the rules until 2006 and one for those since
+2007: `standardObservances` and `daylightObservances` hold all of them, and `standard` and `daylight`
+the first of each.
 
 Property names, parameter names and values such as `VALUE=DATE` or `FREQ=WEEKLY` are matched
 case-insensitively, as RFC 5545 requires. Non-standard `X-` properties are keyed by their
@@ -90,8 +93,9 @@ When an event has no `DTSTAMP`, `dtStamp` is its `LAST-MODIFIED` or `CREATED` da
 | Unknown `TZID` without a `VTIMEZONE` | device time zone | device time zone |
 | `calendar.timeZones` | parsed | empty |
 
-`.standard` follows RFC 5545. `.legacy` parses dates exactly as version 0.3.0 did; use it where
-existing feeds rely on that behaviour, as the Players App does:
+`.standard` follows RFC 5545. `.legacy` parses dates as version 0.3.0 did, apart from the hour
+around a daylight saving change (see below); use it where existing feeds rely on that behaviour,
+as the Players App does:
 
 ```swift
 let parser = ICParser(timeZoneHandling: .legacy)
@@ -99,6 +103,11 @@ let parser = ICParser(timeZoneHandling: .legacy)
 
 `ICDateTime.isFloating` is `true` when a time is not bound to a time zone, and `tzId` keeps the
 original `TZID`.
+
+In both modes, a time that is skipped when clocks go forward is read with the offset before the
+change, so 02:30 on the night clocks go from 02:00 to 03:00 is 03:30. A time that occurs twice when
+clocks go back is the first of the two. This is what RFC 5545 requires; 0.3.0 returned `nil` for a
+skipped time and the second of a repeated one.
 
 ## Listing occurrences
 
@@ -125,10 +134,12 @@ Each `ICOccurrence` has:
 What is taken into account:
 
 - **Recurrence rules**: every `RRULE` frequency and rule part, including "2nd Tuesday"
-  (`BYDAY=2TU`), "last Friday" (`BYDAY=-1FR`), `BYSETPOS`, `COUNT` and `UNTIL`.
+  (`BYDAY=2TU`), "last Friday" (`BYDAY=-1FR`), `BYSETPOS`, `COUNT` and `UNTIL`. An `UNTIL` in
+  local time (without `Z`) is read in the time zone of `DTSTART`.
 - **Added and removed dates**: `RDATE` adds occurrences, `EXDATE` removes them.
 - **Moved or changed occurrences**: an event with the same `UID` and a `RECURRENCE-ID` replaces
-  the occurrence that originally started at that time, both at its old and its new time.
+  the occurrence that originally started at that time, both at its old and its new time. Events
+  without a `UID` are not matched with each other.
 - **This and future changes**: with `RANGE=THISANDFUTURE`, the change also applies to every later
   occurrence, which moves by as much as the changed one moved.
 - **Cancelled events**: events with `STATUS:CANCELLED` are skipped. Pass `includeCancelled: true`
@@ -273,3 +284,5 @@ ForEach(occurrences, id: \.listID) { occurrence in
    - `X-` property keys no longer include parameters, and names are upper case.
    - `ICRRule(...)` now drops invalid rule parts, and keeps only `until` when given both `count`
      and `until`, as assigning them one after the other already did.
+   - A time skipped when clocks go forward is no longer `nil`, and a time repeated when they go
+     back is the first of the two instead of the second (see [Time zones](#time-zones)).

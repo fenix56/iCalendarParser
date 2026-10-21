@@ -23,8 +23,7 @@ final class AttendeesTests: XCTestCase {
         )
         let attendees = PropertyBuilder.buildAttendees(from: [attendee1, attendee2])
 
-        XCTAssertNotNil(attendees)
-        XCTAssertEqual(attendees?.count, 2)
+        XCTAssertEqual(attendees.count, 2)
     }
 
     func testAttendeeEmail() {
@@ -37,7 +36,7 @@ final class AttendeesTests: XCTestCase {
             "mailto:test@example.com"
         )
 
-        let attendee = PropertyBuilder.buildAttendees(from: [property])?.first
+        let attendee = PropertyBuilder.buildAttendees(from: [property]).first
 
         XCTAssertNotNil(attendee?.email)
 
@@ -56,7 +55,7 @@ final class AttendeesTests: XCTestCase {
             "mailto:test@example.com"
         )
 
-        let attendee = PropertyBuilder.buildAttendees(from: [property])?.first
+        let attendee = PropertyBuilder.buildAttendees(from: [property]).first
 
         XCTAssertNotNil(attendee?.nonStandardProperties)
 
@@ -80,7 +79,7 @@ final class AttendeesTests: XCTestCase {
             "mailto:test@example.com"
         )
 
-        let attendee = PropertyBuilder.buildAttendees(from: [property])?.first
+        let attendee = PropertyBuilder.buildAttendees(from: [property]).first
 
         XCTAssertNotNil(attendee?.participationStatus)
 

@@ -10,8 +10,7 @@ extension String {
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.2)
     func splitOutsideQuotes(
-        separator: Character,
-        maxSplits: Int = .max
+        separator: Character
     ) -> [Substring] {
         // Separators are ASCII, so the UTF-8 bytes can be scanned without decoding characters
         guard let separatorByte = separator.asciiValue else {
@@ -28,7 +27,7 @@ extension String {
             let byte = utf8[index]
             if byte == quote {
                 isQuoted.toggle()
-            } else if byte == separatorByte, !isQuoted, parts.count < maxSplits {
+            } else if byte == separatorByte, !isQuoted {
                 parts.append(self[start..<index])
                 start = utf8.index(after: index)
             }

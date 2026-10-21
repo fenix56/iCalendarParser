@@ -70,9 +70,7 @@ extension ICalendar {
         isCancelled: () -> Bool
     ) throws -> [ICOccurrence] {
         try occurrences(from: start, to: end, includeCancelled: includeCancelled) {
-            if isCancelled() {
-                throw CancellationError()
-            }
+            try throwIfCancelled(isCancelled)
         }
     }
 
@@ -86,11 +84,12 @@ extension ICalendar {
             return []
         }
 
-        // One pass to collect overrides by UID and cancelled series, without copying events
+        // One pass to collect overrides by UID and cancelled series, without copying events.
+        // An event without UID belongs to no series.
         var overridesByUID = [String: [ICDateTime]]()
         var futureOverridesByUID = [String: [ICEvent]]()
         var cancelledSeries = Set<String>()
-        for event in events {
+        for event in events where !event.uid.isEmpty {
             try checkCancellation()
             if let recurrenceId = event.recurrenceId {
                 overridesByUID[event.uid, default: []].append(recurrenceId)
@@ -174,9 +173,7 @@ extension ICEvent {
     /// Throws `CancellationError` as soon as it returns `true`.
     public func occurrences(from start: Date, to end: Date, isCancelled: () -> Bool) throws -> [ICOccurrence] {
         try occurrences(from: start, to: end, overrides: .empty) {
-            if isCancelled() {
-                throw CancellationError()
-            }
+            try throwIfCancelled(isCancelled)
         }
     }
 
@@ -246,10 +243,12 @@ extension ICEvent {
 
         let occurrenceStart = dtStart ?? recurrenceId
 
-        let zone = occurrenceStart.resolvedZone
-        let wallClock = zone.wallClock(for: occurrenceStart.date)
         let span = OccurrenceSpan(event: self, dtStart: occurrenceStart)
-        let occurrenceEnd = span.end(from: wallClock, start: occurrenceStart.date, zone: zone)
+        let occurrenceEnd = span.end(
+            from: occurrenceStart.wallClock,
+            start: occurrenceStart.date,
+            zone: occurrenceStart.resolvedZone
+        )
 
         guard Self.overlaps(occurrenceStart.date, occurrenceEnd, start, end) else {
             return nil
@@ -277,7 +276,8 @@ extension ICEvent {
             return []
         }
 
-        let startWall = zone.wallClock(for: dtStart.date)
+        // As written, so that a series starting at a time that is skipped on its first day keeps that time
+        let startWall = dtStart.wallClock
         var starts = [startWall]
 
         if let recurrenceRule {
@@ -307,13 +307,16 @@ extension ICEvent {
         return Set(starts).sorted()
     }
 
-    /// `UNTIL` as an inclusive wall-clock time in the event's zone; a `DATE` includes the whole day
+    /// `UNTIL` as an inclusive wall-clock time in the event's zone; a `DATE` includes the whole day.
+    ///
+    /// A local time without `Z` is read in the event's zone, as written: RFC 5545 requires UTC
+    /// for an event with a time zone, but some producers write local time.
     private func untilWallClock(_ until: ICDateTime, zone: DateTimeZone) -> WallClock {
-        guard until.type == .date else {
-            return zone.wallClock(for: until.date)
+        if until.type == .date {
+            return WallClock(seconds: until.wallClock.daysSince1970 * WallClock.secondsPerDay)
+                .adding(days: 1, seconds: -1)
         }
-        return WallClock(seconds: until.wallClock.daysSince1970 * WallClock.secondsPerDay)
-            .adding(days: 1, seconds: -1)
+        return until.isFloating ? until.wallClock : zone.wallClock(for: until.date)
     }
 
     /// Whether an `EXDATE` or `RECURRENCE-ID` value refers to the occurrence starting at `date`

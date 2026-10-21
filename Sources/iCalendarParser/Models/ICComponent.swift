@@ -11,10 +11,10 @@ struct ICComponent {
         properties.first { Self.hasName($0, name) }
     }
 
-    /// Returns a property that matches the name
+    /// Returns the properties that match the name
     func getProperties(
         name: String
-    ) -> [ICProperty]? {
+    ) -> [ICProperty] {
         properties.filter { Self.hasName($0, name) }
     }
 
@@ -25,24 +25,16 @@ struct ICComponent {
 
     // MARK: - Build property
 
-    /// Returns `ICDateTime` from properties
-    func buildProperty(
-        of name: String
-    ) -> ICDateTime? {
-        buildDateTime(of: name, timeZones: [])
-    }
-
-    /// Returns `ICDateTime` from properties, resolving `TZID` against the given time zone definitions
+    /// Returns `ICDateTime` from properties, resolving `TZID` with `lookup`
     func buildDateTime(
         of name: String,
-        timeZones: [ICTimeZone],
-        timeZoneHandling: ICParser.TimeZoneHandling = .standard
+        lookup: TimeZoneLookup
     ) -> ICDateTime? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildDateTime(from: prop, timeZones: timeZones, timeZoneHandling: timeZoneHandling)
+        return PropertyBuilder.buildDateTime(from: prop, lookup: lookup)
     }
 
     /// Returns `String` from properties
@@ -100,12 +92,8 @@ struct ICComponent {
     /// Returns `[Attendee]` from properties
     func buildAttendees(
         of name: String
-    ) -> [ICAttendee]? {
-        guard let props = getProperties(name: name) else {
-            return nil
-        }
-
-        return PropertyBuilder.buildAttendees(from: props)
+    ) -> [ICAttendee] {
+        PropertyBuilder.buildAttendees(from: getProperties(name: name))
     }
 
     /// Returns all non-standard properties if exists

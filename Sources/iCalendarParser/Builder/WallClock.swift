@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Stored as the number of seconds since `19700101T000000` on the same wall clock,
 /// so it can be compared and converted to a `Date` once the UTC offset is known.
-struct WallClock: Hashable, Comparable {
+struct WallClock: Hashable, Comparable, Sendable {
 
     let seconds: Int
 
@@ -124,14 +124,34 @@ struct WallClock: Hashable, Comparable {
         Date(timeIntervalSince1970: TimeInterval(seconds - offset))
     }
 
-    /// The instant of this wall-clock time in `timeZone`.
-    ///
-    /// A time skipped by a daylight saving transition resolves to the
-    /// same wall-clock time after the transition.
+    /// The instant of this wall-clock time in `timeZone`; see `date(offsetAt:)`
     func date(in timeZone: TimeZone) -> Date {
+        date { timeZone.secondsFromGMT(for: $0) }
+    }
+
+    /// The instant of this wall-clock time in a zone whose UTC offset at each instant is `offsetAt`.
+    ///
+    /// A time that occurs twice, when clocks go back, is its first occurrence. A time that is skipped,
+    /// when clocks go forward, is read with the offset before the gap: 02:30 becomes 03:30 when clocks
+    /// go forward from 02:00 to 03:00.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.5)
+    func date(offsetAt: (Date) -> Int) -> Date {
+        // Offsets are less than a day, so the instant lies between these two,
+        // with at most one transition in between
         let asUTC = date(offset: 0)
-        let estimate = asUTC.addingTimeInterval(-TimeInterval(timeZone.secondsFromGMT(for: asUTC)))
-        return date(offset: timeZone.secondsFromGMT(for: estimate))
+        let before = offsetAt(asUTC.addingTimeInterval(-TimeInterval(Self.secondsPerDay)))
+        let after = offsetAt(asUTC.addingTimeInterval(TimeInterval(Self.secondsPerDay)))
+        guard before != after else {
+            return date(offset: before)
+        }
+
+        // An offset is in effect when it maps back to itself; the larger one gives the earlier instant
+        for offset in [max(before, after), min(before, after)] where offsetAt(date(offset: offset)) == offset {
+            return date(offset: offset)
+        }
+        return date(offset: before)
     }
 
     static func < (lhs: WallClock, rhs: WallClock) -> Bool {

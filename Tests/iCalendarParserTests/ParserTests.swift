@@ -205,7 +205,7 @@ final class ParserTests: XCTestCase {
     func testQuotedSemicolonAndEqualsInParameterValue() {
         let property = ICProperty(#"ATTENDEE;CN="Smith; Jr = CEO";PARTSTAT=ACCEPTED"#, "mailto:ceo@example.com")
 
-        let attendee = PropertyBuilder.buildAttendees(from: [property])?.first
+        let attendee = PropertyBuilder.buildAttendees(from: [property]).first
 
         XCTAssertEqual(attendee?.cname, "Smith; Jr = CEO")
         XCTAssertEqual(attendee?.participationStatus, .accepted)
@@ -251,7 +251,6 @@ final class ParserTests: XCTestCase {
 
     func testSplitOutsideQuotes() {
         XCTAssertEqual(#"A;B="x;y";C"#.splitOutsideQuotes(separator: ";"), ["A", #"B="x;y""#, "C"])
-        XCTAssertEqual(#"N;P="a:b":v:w"#.splitOutsideQuotes(separator: ":", maxSplits: 1), [#"N;P="a:b""#, "v:w"])
         XCTAssertEqual("".splitOutsideQuotes(separator: ";"), [""])
     }
 }

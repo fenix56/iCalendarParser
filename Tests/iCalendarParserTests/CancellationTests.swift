@@ -17,10 +17,11 @@ final class CancellationTests: XCTestCase {
         return lines.joined(separator: "\r\n")
     }
 
-    /// An event whose rule would take a very long time to expand
+    /// An event whose rule would take a very long time to expand: with `COUNT` and `BYHOUR`,
+    /// every second from DTSTART is expanded
     private let endlessRule = [
         "BEGIN:VEVENT", "UID:endless", "DTSTART:20000101T000000Z",
-        "RRULE:FREQ=SECONDLY;COUNT=500000000", "END:VEVENT"
+        "RRULE:FREQ=SECONDLY;BYHOUR=0,12;COUNT=500000000", "END:VEVENT"
     ]
 
     private let rangeStart = Date(timeIntervalSince1970: 1_704_067_200) // 2024-01-01

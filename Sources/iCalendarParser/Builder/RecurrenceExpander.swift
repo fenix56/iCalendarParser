@@ -13,6 +13,10 @@ struct RecurrenceExpander {
     /// Stops runaway rules (e.g. `FREQ=SECONDLY` over years with a large `COUNT`)
     static let maximumPeriods = 1_000_000
 
+    /// About 30,000 years. A longer `INTERVAL` repeats no differently within the range of dates,
+    /// and would overflow when periods are computed.
+    private static let maximumIntervalSeconds = 1_000_000_000_000
+
     private struct DayRule {
         let week: Int?
         let weekday: Int
@@ -45,7 +49,7 @@ struct RecurrenceExpander {
         }
 
         frequency = rule.frequency
-        interval = max(1, rule.interval ?? 1)
+        interval = min(max(1, rule.interval ?? 1), Self.maximumIntervalSeconds / Self.longestPeriod(of: rule.frequency))
         count = rule.count
         self.start = start
         weekStart = rule.startOfWorkweek?.weekday ?? ICRRule.DayOfWeek.monday.weekday
@@ -83,7 +87,7 @@ struct RecurrenceExpander {
     /// Calls `body` with each start time in order, beginning with the start of the series.
     ///
     /// - Parameters:
-    ///   - skipBefore: without `COUNT`, periods before this time may be skipped
+    ///   - skipBefore: periods before this time may be skipped
     ///   - limit: stops after this time
     ///   - until: the inclusive end of the series in wall-clock time (`UNTIL`)
     ///   - checkCancellation: called once per period; throws to stop expanding
@@ -104,6 +108,18 @@ struct RecurrenceExpander {
         remaining -= 1
 
         let firstIndex = firstPeriodIndex(skipBefore: skipBefore)
+        if count != nil, firstIndex > 0 {
+            // Count the skipped occurrences: those after DTSTART in the first period, and as many in
+            // each other period as in the second, as the periods are uniform
+            remaining -= candidates(in: period(at: 0)).filter { $0 > start }.count
+            let perPeriod = candidates(in: period(at: 1)).count
+            let (skipped, overflow) = (firstIndex - 1).multipliedReportingOverflow(by: perPeriod)
+            guard remaining > 0, !overflow, skipped < remaining else {
+                return
+            }
+            remaining -= skipped
+        }
+
         for index in firstIndex..<(firstIndex + Self.maximumPeriods) {
             try checkCancellation()
 
@@ -127,19 +143,36 @@ struct RecurrenceExpander {
 
     // MARK: - Periods
 
-    private var fixedPeriodLength: Int? {
+    /// The length of a period in seconds; for months and years the longest one
+    private static func longestPeriod(of frequency: ICRRule.Frequency) -> Int {
         switch frequency {
         case .secondly: return 1
         case .minutely: return 60
         case .hourly: return 3_600
         case .daily: return WallClock.secondsPerDay
         case .weekly: return 7 * WallClock.secondsPerDay
-        case .monthly, .yearly: return nil
+        case .monthly: return 31 * WallClock.secondsPerDay
+        case .yearly: return 366 * WallClock.secondsPerDay
         }
     }
 
+    private var fixedPeriodLength: Int? {
+        frequency == .monthly || frequency == .yearly ? nil : Self.longestPeriod(of: frequency)
+    }
+
+    /// Whether every fixed-length period after the first has the same number of start times, because
+    /// the rule only expands periods and never filters them; then periods can be skipped keeping `COUNT`
+    private var hasUniformPeriods: Bool {
+        // Day rules filter days, except BYDAY in a week; time rules filter units at or above the frequency
+        byMonth == nil && byWeekNo == nil && byYearDay == nil && byMonthDay == nil
+            && (byDay == nil || frequency == .weekly)
+            && (byHour == nil || timeRank > 2)
+            && (byMinute == nil || timeRank > 1)
+            && (bySecond == nil || timeRank > 0)
+    }
+
     private func firstPeriodIndex(skipBefore: WallClock?) -> Int {
-        guard count == nil, let skipBefore, let length = fixedPeriodLength else {
+        guard count == nil || hasUniformPeriods, let skipBefore, let length = fixedPeriodLength else {
             return 0
         }
         let distance = skipBefore.seconds - period(at: 0).start.seconds
@@ -197,20 +230,22 @@ struct RecurrenceExpander {
         return Set(positions).sorted().map { candidates[$0] }
     }
 
+    /// The rank of the frequency among the time units: 0 for seconds, 1 for minutes, 2 for hours, 3 for longer
+    private var timeRank: Int {
+        switch frequency {
+        case .secondly: return 0
+        case .minutely: return 1
+        case .hourly: return 2
+        default: return 3
+        }
+    }
+
     /// Seconds of the day for the occurrences in a period, in order
     private func timesOfDay(in period: Period) -> [Int] {
         // Units at or above the frequency are fixed by the period and only filtered;
         // finer units are expanded from the rule or taken from DTSTART
-        let rank: Int
-        switch frequency {
-        case .secondly: rank = 0
-        case .minutely: rank = 1
-        case .hourly: rank = 2
-        default: rank = 3
-        }
-
         func values(_ unitRank: Int, fixed: Int, rule: [Int]?, default value: Int) -> [Int] {
-            if unitRank >= rank {
+            if unitRank >= timeRank {
                 return rule.map { $0.contains(fixed) ? [fixed] : [] } ?? [fixed]
             }
             return (rule ?? [value]).sorted()

@@ -5,45 +5,9 @@ final class TimeZoneTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// Outlook / Exchange style definition with a Windows time zone name
-    private let windowsEurope = [
-        "BEGIN:VTIMEZONE",
-        "TZID:W. Europe Standard Time",
-        "BEGIN:STANDARD",
-        "DTSTART:16010101T030000",
-        "TZOFFSETFROM:+0200",
-        "TZOFFSETTO:+0100",
-        "RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=10",
-        "END:STANDARD",
-        "BEGIN:DAYLIGHT",
-        "DTSTART:16010101T020000",
-        "TZOFFSETFROM:+0100",
-        "TZOFFSETTO:+0200",
-        "RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=3",
-        "END:DAYLIGHT",
-        "END:VTIMEZONE"
-    ]
-
-    /// Apple style definition with a custom identifier
-    private let customEastern = [
-        "BEGIN:VTIMEZONE",
-        "TZID:US-Eastern-Custom",
-        "BEGIN:DAYLIGHT",
-        "TZOFFSETFROM:-0500",
-        "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
-        "DTSTART:20070311T020000",
-        "TZNAME:EDT",
-        "TZOFFSETTO:-0400",
-        "END:DAYLIGHT",
-        "BEGIN:STANDARD",
-        "TZOFFSETFROM:-0400",
-        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
-        "DTSTART:20071104T020000",
-        "TZNAME:EST",
-        "TZOFFSETTO:-0500",
-        "END:STANDARD",
-        "END:VTIMEZONE"
-    ]
+    private let windowsEurope = TimeZoneFixtures.windowsEurope
+    private let customEastern = TimeZoneFixtures.customEastern
+    private let historicEastern = TimeZoneFixtures.historicEastern
 
     private func calendar(timeZone: [String], event: [String] = []) -> ICalendar? {
         let lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Example//EN"]
@@ -61,6 +25,14 @@ final class TimeZoneTests: XCTestCase {
         return wallClock
     }
 
+    private func utc(_ value: String) -> Date {
+        wallClock(value).date(offset: 0)
+    }
+
+    private func zone(_ timeZone: [String]) throws -> DateTimeZone {
+        .definition(try XCTUnwrap(calendar(timeZone: timeZone)?.uniqueTimeZone))
+    }
+
     // MARK: - VTIMEZONE parsing
 
     func testParsesTimeZoneDefinitions() {
@@ -73,6 +45,29 @@ final class TimeZoneTests: XCTestCase {
         XCTAssertEqual(timeZone?.daylight?.recurrenceRule?.byDay, [.last(.sunday)])
         // 1601-01-01 03:00 in the +0200 offset in use before the observance
         XCTAssertEqual(timeZone?.standard?.dtStart, wallClock("16010101T030000").date(offset: 7_200))
+    }
+
+    func testParsesEveryObservance() throws {
+        let timeZone = try XCTUnwrap(calendar(timeZone: historicEastern)?.uniqueTimeZone)
+
+        XCTAssertEqual(timeZone.standardObservances.map(\.recurrenceRule?.byMonth), [[10], [11]])
+        XCTAssertEqual(timeZone.daylightObservances.map(\.recurrenceRule?.byMonth), [[4], [3]])
+        XCTAssertEqual(timeZone.standard, timeZone.standardObservances.first)
+        XCTAssertEqual(timeZone.daylight, timeZone.daylightObservances.first)
+    }
+
+    func testFirstObservanceCanBeReplaced() throws {
+        var timeZone = try XCTUnwrap(calendar(timeZone: historicEastern)?.uniqueTimeZone)
+
+        timeZone.standard?.timeZoneName = "Eastern Standard Time"
+        XCTAssertEqual(timeZone.standardObservances.map(\.timeZoneName), ["Eastern Standard Time", "EST"])
+
+        timeZone.daylight = nil
+        XCTAssertEqual(timeZone.daylightObservances.map(\.recurrenceRule?.byMonth), [[3]])
+
+        var empty = ICTimeZone(timeZoneId: "Empty")
+        empty.standard = timeZone.standard
+        XCTAssertEqual(empty.standardObservances.map(\.timeZoneName), ["Eastern Standard Time"])
     }
 
     func testParsesMultipleTimeZoneDefinitions() {
@@ -96,6 +91,29 @@ final class TimeZoneTests: XCTestCase {
         XCTAssertEqual(event?.dtStart?.tzId, "W. Europe Standard Time")
         XCTAssertEqual(event?.dtStart?.isFloating, false)
         XCTAssertEqual(event?.dtEnd?.date, Date(timeIntervalSince1970: 1_721_030_400)) // 2024-07-15 08:00 UTC
+    }
+
+    func testEventTimeWithSeveralObservancesOfEachKind() {
+        let event = calendar(
+            timeZone: historicEastern,
+            event: ["DTSTART;TZID=Eastern:20240315T100000", "DTEND;TZID=Eastern:20050315T100000"]
+        )?.events.first
+
+        // Summer time starts on the second Sunday in March since 2007, and in April before
+        XCTAssertEqual(event?.dtStart?.date, utc("20240315T140000"))
+        XCTAssertEqual(event?.dtEnd?.date, utc("20050315T150000"))
+    }
+
+    func testDefinitionWithSeveralObservancesOfEachKindMatchesSystemTimeZoneEveryDay() throws {
+        let definition = try XCTUnwrap(calendar(timeZone: historicEastern)?.uniqueTimeZone)
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+
+        assertMatches(
+            definition,
+            newYork,
+            from: .init(year: 1988, month: 1, day: 1),
+            to: .init(year: 2035, month: 12, day: 31)
+        )
     }
 
     func testWindowsDefinitionMatchesSystemTimeZoneEveryDay() throws {
@@ -125,7 +143,7 @@ final class TimeZoneTests: XCTestCase {
     }
 
     func testCustomDefinitionAroundTransitions() throws {
-        let definition = try XCTUnwrap(calendar(timeZone: customEastern)?.uniqueTimeZone)
+        let definition = try zone(customEastern)
 
         // 2024-03-10 02:00 EST -> EDT
         XCTAssertEqual(definition.date(for: wallClock("20240310T013000")), Date(timeIntervalSince1970: 1_710_052_200))
@@ -136,7 +154,7 @@ final class TimeZoneTests: XCTestCase {
     }
 
     func testTimeBeforeFirstObservanceUsesOffsetBeforeIt() throws {
-        let definition = try XCTUnwrap(calendar(timeZone: customEastern)?.uniqueTimeZone)
+        let definition = try zone(customEastern)
 
         // Before 2007-03-11 02:00 the definition only knows the -0500 offset
         XCTAssertEqual(
@@ -203,6 +221,35 @@ final class TimeZoneTests: XCTestCase {
         XCTAssertEqual(dateTime?.date, wallClock("20240115T100000").date(in: .current))
     }
 
+    // MARK: - Changed properties
+
+    func testChangedPropertiesReplaceParsedZone() throws {
+        let parsed = try XCTUnwrap(PropertyBuilder.buildDateTime(from: ("DTSTART;TZID=UTC", "20240115T100000")))
+
+        var allDay = parsed
+        allDay.type = .date
+        XCTAssertEqual(allDay.resolvedZone, .system(.current))
+
+        var floating = parsed
+        floating.isFloating = true
+        XCTAssertEqual(floating.resolvedZone, .system(.current))
+
+        var berlin = parsed
+        berlin.tzId = "Europe/Berlin"
+        XCTAssertEqual(berlin.resolvedZone, .system(try XCTUnwrap(TimeZone(identifier: "Europe/Berlin"))))
+    }
+
+    func testChangedDateKeepsTimeZoneDefinition() throws {
+        let event = calendar(timeZone: windowsEurope, event: ["DTSTART;TZID=W. Europe Standard Time:20240115T100000"])
+        var start = try XCTUnwrap(event?.events.first?.dtStart)
+
+        start.date = utc("20240715T080000")
+        start.tzId = "W. Europe Standard Time"
+
+        XCTAssertEqual(start.resolvedZone, try zone(windowsEurope))
+        XCTAssertEqual(start.wallClock, wallClock("20240715T100000"))
+    }
+
     // MARK: - Helpers
 
     private func assertMatches(
@@ -220,7 +267,7 @@ final class TimeZoneTests: XCTestCase {
         for day in firstDay...lastDay {
             // Noon avoids the ambiguous and skipped hours around transitions
             let noon = WallClock(seconds: day * WallClock.secondsPerDay + 43_200)
-            if definition.date(for: noon) != noon.date(in: timeZone) {
+            if DateTimeZone.definition(definition).date(for: noon) != noon.date(in: timeZone) {
                 let date = WallClock.civilDate(daysSince1970: day)
                 mismatches.append("\(date.year)-\(date.month)-\(date.day)")
             }

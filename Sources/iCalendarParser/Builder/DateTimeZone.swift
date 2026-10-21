@@ -15,6 +15,16 @@ enum DateTimeZone: Equatable, Sendable {
         .system(TimeZone(secondsFromGMT: 0) ?? .current)
     }
 
+    /// The UTC offset in seconds in effect at `date`
+    func offset(at date: Date) -> Int {
+        switch self {
+        case .system(let timeZone):
+            return timeZone.secondsFromGMT(for: date)
+        case .definition(let definition):
+            return definition.offset(at: date) ?? 0
+        }
+    }
+
     func date(for wallClock: WallClock) -> Date {
         switch self {
         case .system(let timeZone):
@@ -25,27 +35,14 @@ enum DateTimeZone: Equatable, Sendable {
     }
 
     func wallClock(for date: Date) -> WallClock {
-        switch self {
-        case .system(let timeZone):
-            return WallClock(date: date, offset: timeZone.secondsFromGMT(for: date))
-        case .definition(let definition):
-            // The offset in effect is one of the observance offsets: use the one that maps back to `date`
-            let offsets = [definition.standard, definition.daylight]
-                .compactMap { $0 }
-                .flatMap { [$0.timeZoneOffsetTo, $0.timeZoneOffsetFrom] }
-                .compactMap { UTCOffset.seconds(from: $0) }
-            let match = offsets
-                .map { WallClock(date: date, offset: $0) }
-                .first { definition.date(for: $0) == date }
-            return match ?? WallClock(date: date, offset: 0)
-        }
+        WallClock(date: date, offset: offset(at: date))
     }
 }
 
 extension ICDateTime {
 
     /// The zone to expand recurrences in: the zone this value was parsed in, or one
-    /// derived from its properties for a value created in code
+    /// derived from its properties for a value created or changed in code
     var resolvedZone: DateTimeZone {
         if let zone {
             return zone
@@ -62,8 +59,9 @@ extension ICDateTime {
         return .utc
     }
 
-    /// The wall-clock time of this value in `resolvedZone`
+    /// The wall-clock time of this value in `resolvedZone`: as written when parsed, which differs
+    /// from the time of `date` for a time skipped when clocks go forward
     var wallClock: WallClock {
-        resolvedZone.wallClock(for: date)
+        parsedWallClock ?? resolvedZone.wallClock(for: date)
     }
 }

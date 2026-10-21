@@ -34,15 +34,9 @@ extension ICParser {
         from data: Data,
         isCancelled: () -> Bool
     ) throws -> ICalendar? {
-        func checkCancellation() throws {
-            if isCancelled() {
-                throw CancellationError()
-            }
-        }
-
-        return try parseCalendar(
-            elements: ContentLineScanner.properties(in: data, checkCancellation: checkCancellation),
-            checkCancellation: checkCancellation
+        try parseCalendar(
+            elements: ContentLineScanner.properties(in: data) { try throwIfCancelled(isCancelled) },
+            checkCancellation: { try throwIfCancelled(isCancelled) }
         )
     }
 }

@@ -54,6 +54,36 @@ final class RRuleTests: XCTestCase {
         XCTAssertEqual(rrule?.byDay, [.every(.tuesday)])
     }
 
+    // MARK: - Out-of-range values must not crash
+
+    func testSmallestIntegerIsRejectedWithoutOverflow() {
+        let property = ICProperty(
+            "RRULE",
+            "FREQ=MONTHLY;BYMONTHDAY=-9223372036854775808;BYDAY=-9223372036854775808MO;BYSETPOS=-9223372036854775808"
+        )
+        let rrule = PropertyBuilder.buildRRule(from: property)
+
+        XCTAssertNil(rrule?.byDayOfMonth)
+        XCTAssertNil(rrule?.bySetPos)
+        XCTAssertEqual(rrule?.byDay, [.every(.monday)])
+        XCTAssertNil(ICRRule.Day(week: .min, dayOfWeek: .monday).week)
+    }
+
+    func testNegativeValuesAreValidWithinRange() {
+        var rule = ICRRule(byDayOfMonth: [-31, -1, 1, 31], frequency: .monthly)
+        XCTAssertEqual(rule.byDayOfMonth, [-31, -1, 1, 31])
+
+        rule.byDayOfMonth = [-32]
+        XCTAssertNil(rule.byDayOfMonth)
+        rule.byDayOfMonth = [0]
+        XCTAssertNil(rule.byDayOfMonth)
+        rule.byHour = [-1]
+        XCTAssertNil(rule.byHour)
+
+        XCTAssertEqual(ICRRule.Day(week: -53, dayOfWeek: .friday).week, -53)
+        XCTAssertNil(ICRRule.Day(week: -54, dayOfWeek: .friday).week)
+    }
+
     func testParseCalendarWithMalformedByDay() {
         let rawIcs = [
             "BEGIN:VCALENDAR",

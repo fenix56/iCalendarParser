@@ -16,6 +16,14 @@ struct PropertyBuilder {
         timeZones: [ICTimeZone] = [],
         timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICDateTime? {
+        buildDateTime(from: prop, lookup: TimeZoneLookup(definitions: timeZones, handling: timeZoneHandling))
+    }
+
+    /// Returns `ICDateTime` for a `DATE` or `DATE-TIME` property, resolving `TZID` with `lookup`
+    static func buildDateTime(
+        from prop: ICProperty,
+        lookup: TimeZoneLookup
+    ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
         let isUTC = prop.value.utf8.last == UInt8(ascii: "Z") || prop.value.utf8.last == UInt8(ascii: "z")
         let value = isUTC ? String(prop.value.dropLast()) : prop.value
@@ -27,13 +35,7 @@ struct PropertyBuilder {
         let type = getDateTimeType(from: params, value: value)
         // A TZID is ignored for DATE values and for UTC times
         let tzid = type == .dateTime && !isUTC ? getTimeZoneId(from: params) : nil
-        let zone = resolveZone(
-            type: type,
-            isUTC: isUTC,
-            tzid: tzid,
-            timeZones: timeZones,
-            timeZoneHandling: timeZoneHandling
-        )
+        let zone = resolveZone(type: type, isUTC: isUTC, tzid: tzid, lookup: lookup)
 
         var dateTime = ICDateTime(
             date: (zone ?? .system(.current)).date(for: wallClock),
@@ -42,6 +44,7 @@ struct PropertyBuilder {
             isFloating: type == .dateTime && !isUTC && (tzid == nil || zone == nil)
         )
         dateTime.zone = zone ?? .system(.current)
+        dateTime.parsedWallClock = wallClock
         return dateTime
     }
 
@@ -50,19 +53,14 @@ struct PropertyBuilder {
     /// Each property may hold a comma-separated list. For a `PERIOD` value only the start is used.
     static func buildDateTimes(
         from props: [ICProperty],
-        timeZones: [ICTimeZone] = [],
-        timeZoneHandling: ICParser.TimeZoneHandling = .standard
+        lookup: TimeZoneLookup
     ) -> [ICDateTime] {
         props.flatMap { prop in
             prop.value
                 .split(separator: ",")
                 .compactMap { item -> ICDateTime? in
                     let start = item.split(separator: "/", maxSplits: 1).first.map(String.init) ?? ""
-                    return buildDateTime(
-                        from: (name: prop.name, value: start),
-                        timeZones: timeZones,
-                        timeZoneHandling: timeZoneHandling
-                    )
+                    return buildDateTime(from: (name: prop.name, value: start), lookup: lookup)
                 }
         }
     }
@@ -72,8 +70,7 @@ struct PropertyBuilder {
         type: DateTimeType,
         isUTC: Bool,
         tzid: String?,
-        timeZones: [ICTimeZone],
-        timeZoneHandling: ICParser.TimeZoneHandling
+        lookup: TimeZoneLookup
     ) -> DateTimeZone? {
         if type == .date {
             return .system(.current)
@@ -84,24 +81,10 @@ struct PropertyBuilder {
         }
 
         guard let tzid else {
-            return timeZoneHandling == .legacy ? .utc : nil
+            return lookup.handling == .legacy ? .utc : nil
         }
 
-        let timeZone = timeZoneHandling == .legacy
-            ? TimeZone(identifier: tzid)
-            : TimeZoneResolver.timeZone(for: tzid)
-
-        if let timeZone {
-            return .system(timeZone)
-        }
-
-        if timeZoneHandling == .standard,
-           let definition = timeZones.first(where: { $0.timeZoneId == tzid }),
-           definition.date(for: WallClock(seconds: 0)) != nil {
-            return .definition(definition)
-        }
-
-        return nil
+        return lookup.zone(for: tzid)
     }
 
     // swiftlint:disable:next cyclomatic_complexity
