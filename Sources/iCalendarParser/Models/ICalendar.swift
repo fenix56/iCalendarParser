@@ -1,16 +1,10 @@
 import Foundation
 
-/// A collection ofcalendaring and scheduling information
+/// A collection of calendaring and scheduling information
 ///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.4)
-public struct ICalendar {
-
-    var components: [ICComponentable] {
-        [events, timeZones]
-            .compactMap { $0 as? [ICComponentable] }
-            .flatMap { $0 }
-    }
+public struct ICalendar: Sendable {
 
     // MARK: - Public properties
 

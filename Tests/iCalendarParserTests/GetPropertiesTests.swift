@@ -44,4 +44,23 @@ final class GetPropertiesTests: XCTestCase {
         """
         XCTAssertEqual(properties.first?.name, name)
     }
+
+    func testPropertyValueKeepsColons() {
+        let rawIcs = "URL:https://example.com:8080/event\r\nDESCRIPTION:Time: 10:00"
+
+        let properties = ICParser().getProperties(from: rawIcs)
+
+        XCTAssertEqual(properties.count, 2)
+        XCTAssertEqual(properties.first?.name, "URL")
+        XCTAssertEqual(properties.first?.value, "https://example.com:8080/event")
+        XCTAssertEqual(properties.last?.value, "Time: 10:00")
+    }
+
+    func testLinesWithoutValueAreSkipped() {
+        let rawIcs = "BEGIN:VCALENDAR\r\nDESCRIPTION:\r\nNO-SEPARATOR\r\n\r\nEND:VCALENDAR"
+
+        let properties = ICParser().getProperties(from: rawIcs)
+
+        XCTAssertEqual(properties.map(\.name), ["BEGIN", "END"])
+    }
 }

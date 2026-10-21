@@ -1,6 +1,6 @@
 import Foundation
 
-public enum DateTimeType {
+public enum DateTimeType: Sendable {
     case date
     case dateTime
 
@@ -10,7 +10,7 @@ public enum DateTimeType {
     ) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        
+
         if let tzId {
             formatter.timeZone = TimeZone(identifier: tzId)
         } else if self == .date {

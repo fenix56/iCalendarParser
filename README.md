@@ -4,7 +4,7 @@
     <a href="https://github.com/dmail-me/iCalendarParser/actions">
       <img src="https://github.com/dmail-me/iCalendarParser/workflows/ci/badge.svg?branch=main">
     </a>
-    <img src="https://img.shields.io/badge/Swift-5.7-ff69b4.svg" />
+    <img src="https://img.shields.io/badge/Swift-6.0-ff69b4.svg" />
     <img src="https://img.shields.io/badge/license-MIT-black.svg" />
 </p>
 
@@ -41,6 +41,53 @@ let rawICS: String = ...
 let parser = ICParser()
 let calendar: ICalendar? = parser.calendar(from: rawICS)
 ```
+
+See the [usage guide](Documentation/Usage.md) for time zones, occurrences, multi-day events,
+cancellation and migrating from 0.3.0.
+
+### Upcoming events
+
+Pass downloaded or file `Data` straight to `parser.calendar(from: data)`: lines are unfolded before decoding, so characters split across folded lines, such as emoji, are restored.
+
+`occurrencesByDay(from:days:)` returns the occurrences for each calendar day, listing multi-day events on every day they cover. `occurrences(from:to:)` expands recurring events and returns every occurrence in a date range, sorted by start:
+
+```swift
+let today = Calendar.current.startOfDay(for: Date())
+let nextWeek = Calendar.current.date(byAdding: .day, value: 7, to: today)!
+
+for occurrence in calendar?.occurrences(from: today, to: nextWeek) ?? [] {
+    print(occurrence.event.summary ?? "", occurrence.start, occurrence.end, occurrence.isAllDay)
+}
+```
+
+It supports every `RRULE` frequency and rule part, adds `RDATE` and removes `EXDATE` dates, replaces moved or changed occurrences with their `RECURRENCE-ID` event, takes the length from `DTEND` or `DURATION`, and skips cancelled events unless `includeCancelled` is `true`. Recurrences keep their local time across daylight saving transitions.
+
+### Cancellation
+
+Parsing and occurrence expansion have throwing variants that take an `isCancelled` closure. It is called regularly (for every line, component, event and recurrence step), and the call throws `CancellationError` as soon as it returns `true`. Inside a task, pass `Task.isCancelled`:
+
+```swift
+let task = Task.detached {
+    let calendar = try ICParser().calendar(from: rawICS) { Task.isCancelled }
+    return try calendar?.occurrences(from: today, to: nextWeek) { Task.isCancelled } ?? []
+}
+
+task.cancel() // stops parsing or expansion within milliseconds
+```
+
+The closure also works with other mechanisms, such as `{ workItem.isCancelled }` for a `DispatchWorkItem`.
+
+### Time zones
+
+By default, dates follow RFC 5545: a time without `Z` or `TZID` is local time on the device, and a `TZID` is resolved as a system time zone or with the calendar's `VTIMEZONE` definitions.
+
+Apps that relied on the earlier behaviour can opt in to it:
+
+```swift
+let parser = ICParser(timeZoneHandling: .legacy)
+```
+
+With `.legacy`, a time without `Z` or `TZID` is read as UTC, a `TZID` that is not a system time zone identifier is read in the device's time zone, and `VTIMEZONE` components are not parsed.
 
 ## Is it production ready?
 

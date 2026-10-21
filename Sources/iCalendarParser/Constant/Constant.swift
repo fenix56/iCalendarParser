@@ -80,6 +80,8 @@ extension Constant {
         static let priority: String = "PRIORITY"
         static let recurrenceDates: String = "RDATE"
         static let recurrenceId: String = "RECURRENCE-ID"
+        static let range: String = "RANGE"
+        static let thisAndFuture: String = "THISANDFUTURE"
         static let recurrenceRule: String = "RRULE"
         static let sequence: String = "SEQUENCE"
         static let status: String = "STATUS"
@@ -88,12 +90,6 @@ extension Constant {
         static let tzUrl: String = "TZURL"
         static let uid: String = "UID"
         static let url: String = "URL"
-    }
-
-    enum ProductId {
-        static let companyName: String = "Aria Inc"
-        static let productName: String = "ICalendarParser"
-        static let language: String = "EN"
     }
 
     enum Frequency {
@@ -120,7 +116,8 @@ extension Constant {
         static let needsAction = "NEEDS-ACTION"
         static let accepted = "ACCEPTED"
         static let declined = "DECLINED"
-        static let tenative = "TENTATIVE"
+        static let tentative = "TENTATIVE"
+        static let delegated = "DELEGATED"
     }
 
 }

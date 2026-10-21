@@ -12,18 +12,18 @@ final class DateTimeTypeTests: XCTestCase {
     }
 
     func testDateTimeWithCorrectDate() {
-        let property = ICProperty("DTSTART", "19700329T020000")
+        let property = ICProperty("DTSTART", "19700329T020000Z")
         let dateTime = PropertyBuilder.buildDateTime(from: property)!
 
-        let date = dateTime.type.dateFormatter().date(from: "19700329T020000")
+        let date = dateTime.type.dateFormatter().date(from: "19700329T020000Z")
         XCTAssertEqual(dateTime.date, date)
     }
 
     func testDateTimeWithWrongDate() {
-        let property = ICProperty("DTSTART", "19700329T020000")
+        let property = ICProperty("DTSTART", "19700329T020000Z")
         let dateTime = PropertyBuilder.buildDateTime(from: property)!
 
-        let wrongDate = dateTime.type.dateFormatter().date(from: "19700327T020000")
+        let wrongDate = dateTime.type.dateFormatter().date(from: "19700327T020000Z")
         XCTAssertNotEqual(dateTime.date, wrongDate)
     }
 }

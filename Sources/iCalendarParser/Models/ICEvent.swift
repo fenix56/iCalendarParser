@@ -1,13 +1,9 @@
 import Foundation
 
-/// A grouping of component properties that describe an
+/// A grouping of component properties that describe an event
 ///
 /// See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.6.1)
-public struct ICEvent: ICComponentable {
-
-    // MARK: - ICComponentable
-
-    let type: ICComponentType = .event
+public struct ICEvent: Sendable {
 
     // MARK: - Properties
 
@@ -15,6 +11,8 @@ public struct ICEvent: ICComponentable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.1)
+    ///
+    /// Empty when a parsed event has no `ATTENDEE`.
     public var attendees: [ICAttendee]?
 
     // Provides the capability to associate a document object with a calendar component.
@@ -57,18 +55,12 @@ public struct ICEvent: ICComponentable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.2)
     public var dtEnd: ICDateTime?
 
-    /**
-     The calendar scale used for the calendar information specified in the iCalendar object.
-     In the case of an iCalendar object that specifies a
-     "METHOD" property, this property specifies the date and time that
-     the instance of the iCalendar object was created.  In the case of
-     an iCalendar object that doesn't specify a "METHOD" property, this
-     property specifies the date and time that the information
-     associated with the calendar component was last revised in the
-     calendar
-     
-     See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.8.7.2)
-     */
+    /// When the event was created or last revised, as set by the producer (`DTSTAMP`).
+    ///
+    /// When the event has no valid `DTSTAMP`, `LAST-MODIFIED` or `CREATED` is used instead,
+    /// and `Date.distantPast` when it has neither.
+    ///
+    /// See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.8.7.2)
     public var dtStamp: Date
 
     /// The start date and time for the event.
@@ -77,18 +69,18 @@ public struct ICEvent: ICComponentable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.4)
     public var dtStart: ICDateTime?
 
-    // A positive duration of time.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.5)
-    // var duration: ICDuration?
+    /// A positive duration of time, used instead of `dtEnd` to define the event's length.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.5)
+    public var duration: ICDuration?
 
-    // The list of DATE-TIME exceptions for recurring events, to-dos, journal entries,
-    // or time zone definitions.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.1)
-    // var exceptionDates: [Date]?
+    /// The list of DATE-TIME exceptions for recurring events, to-dos, journal entries,
+    /// or time zone definitions (`EXDATE`).
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.1)
+    public var exceptionDates: [ICDateTime]
 
     // Specifies information related to the global position for the activity specified by
     // a calendar component.
@@ -122,7 +114,16 @@ public struct ICEvent: ICComponentable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.3)
+    ///
+    /// The calendar user address as written, such as `mailto:jane@example.com`.
+    /// See `organizerEmail` and `organizerName`.
     public var organizer: String?
+
+    /// The common name (`CN`) of the organizer
+    public var organizerName: String?
+
+    /// The organizer's calendar user address without the `mailto:` scheme
+    public var organizerEmail: String?
 
     /// Defines the relative priority for a calendar component.
     ///
@@ -139,11 +140,19 @@ public struct ICEvent: ICComponentable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.4)
     public var recurrenceId: ICDateTime?
 
-    // The list of DATE-TIME values for recurring events, to-dos, journal entries, or time zone definitions.
-    //
-    // See more in [RFC 5545](
-    // https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.2)
-    // var recurrenceDates: [ICDateTime]?
+    /// `true` when `RECURRENCE-ID` has `RANGE=THISANDFUTURE`: the changes in this event apply to
+    /// the occurrence it identifies and to every later occurrence of the recurring event.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.2.13)
+    public var appliesToFutureOccurrences: Bool
+
+    /// The list of DATE-TIME values for recurring events, to-dos, journal entries, or time zone
+    /// definitions (`RDATE`), in addition to those defined by `recurrenceRule`.
+    ///
+    /// See more in [RFC 5545](
+    /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.5.2)
+    public var recurrenceDates: [ICDateTime]
 
     // A rule or repeating pattern for recurring events, to-dos, journal entries, or time zone definitions.
     //
@@ -185,6 +194,8 @@ public struct ICEvent: ICComponentable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.7)
+    ///
+    /// Empty when a parsed event has no `UID`.
     public var uid: String
 
     /// Defines a Uniform Resource Locator (URL) associated with the iCalendar object.
@@ -194,6 +205,7 @@ public struct ICEvent: ICComponentable {
     public var url: URL?
 
     public init(
+        appliesToFutureOccurrences: Bool = false,
         attendees: [ICAttendee]? = nil,
         classification: String? = nil,
         description: String? = nil,
@@ -201,12 +213,18 @@ public struct ICEvent: ICComponentable {
         dtEnd: ICDateTime? = nil,
         dtStamp: Date = Date(),
         dtStart: ICDateTime? = nil,
+        duration: ICDuration? = nil,
+        exceptionDates: [ICDateTime] = [],
         lastModified: Date? = nil,
         location: String? = nil,
         nonStandardProperties: [String: String]? = nil,
         organizer: String? = nil,
+        organizerEmail: String? = nil,
+        organizerName: String? = nil,
         priority: Int? = nil,
+        recurrenceDates: [ICDateTime] = [],
         recurrenceId: ICDateTime? = nil,
+        recurrenceRule: ICRRule? = nil,
         sequence: Int? = nil,
         status: String? = nil,
         summary: String? = nil,
@@ -214,6 +232,7 @@ public struct ICEvent: ICComponentable {
         uid: String = UUID().uuidString,
         url: URL? = nil
     ) {
+        self.appliesToFutureOccurrences = appliesToFutureOccurrences
         self.attendees = attendees
         self.classification = classification
         self.description = description
@@ -221,12 +240,18 @@ public struct ICEvent: ICComponentable {
         self.dtEnd = dtEnd
         self.dtStamp = dtStamp
         self.dtStart = dtStart
+        self.duration = duration
+        self.exceptionDates = exceptionDates
         self.lastModified = lastModified
         self.location = location
         self.nonStandardProperties = nonStandardProperties
         self.organizer = organizer
+        self.organizerEmail = organizerEmail
+        self.organizerName = organizerName
         self.priority = priority
+        self.recurrenceDates = recurrenceDates
         self.recurrenceId = recurrenceId
+        self.recurrenceRule = recurrenceRule
         self.sequence = sequence
         self.status = status
         self.summary = summary
@@ -236,8 +261,33 @@ public struct ICEvent: ICComponentable {
     }
 }
 
+/// Two events are equal when they have the same `UID`.
+///
+/// A recurring event and the events that change single occurrences of it share a `UID`,
+/// so they are equal. Use `id`, which adds `RECURRENCE-ID`, to tell them apart.
 extension ICEvent: Equatable {
     public static func == (lhs: ICEvent, rhs: ICEvent) -> Bool {
         lhs.uid == rhs.uid
+    }
+}
+
+extension ICEvent: Identifiable {
+
+    /// Identifies an event, or one changed occurrence of a recurring event.
+    ///
+    /// A recurring event and the events that change single occurrences of it share
+    /// a `UID` and differ in `RECURRENCE-ID`.
+    public struct ID: Hashable, Sendable { // swiftlint:disable:this type_name - conventional for Identifiable
+        public let uid: String
+        public let recurrenceId: Date?
+
+        public init(uid: String, recurrenceId: Date? = nil) {
+            self.uid = uid
+            self.recurrenceId = recurrenceId
+        }
+    }
+
+    public var id: ID {
+        ID(uid: uid, recurrenceId: recurrenceId?.date)
     }
 }

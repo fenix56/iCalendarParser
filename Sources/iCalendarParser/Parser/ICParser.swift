@@ -2,16 +2,62 @@ import Foundation
 
 typealias ICProperty = (name: String, value: String)
 
-public struct ICParser {
+public struct ICParser: Sendable {
 
-    public init() {}
+    /// How `DATE-TIME` values are bound to a time zone
+    public enum TimeZoneHandling: Sendable {
+
+        /// Follows RFC 5545.
+        ///
+        /// A value without `Z` or `TZID` is floating local time in the device's time zone.
+        /// A `TZID` is resolved as a system time zone identifier, including identifiers with a
+        /// vendor prefix, and then against the `VTIMEZONE` components of the calendar.
+        case standard
+
+        /// Reproduces how dates were parsed before `VTIMEZONE` support.
+        ///
+        /// - A value without `Z` or `TZID` is read as UTC.
+        /// - A `TZID` that is not a system time zone identifier is read in the device's time zone.
+        /// - `VTIMEZONE` components are not parsed, so `ICalendar.timeZones` is empty.
+        case legacy
+    }
+
+    public let timeZoneHandling: TimeZoneHandling
+
+    public init(timeZoneHandling: TimeZoneHandling = .standard) {
+        self.timeZoneHandling = timeZoneHandling
+    }
 
     /// Parse strings to create ICalendar object. Returns nil if not found.
     public func calendar(
         from raw: String
     ) -> ICalendar? {
+        parseCalendar(elements: getProperties(from: raw), checkCancellation: {})
+    }
 
-        let elements: [ICProperty] = getProperties(from: raw)
+    /// Parse strings to create ICalendar object. Returns nil if not found.
+    ///
+    /// Calls `isCancelled` regularly while parsing and throws `CancellationError`
+    /// as soon as it returns `true`. Inside a task, pass `{ Task.isCancelled }`:
+    ///
+    /// ```swift
+    /// let calendar = try parser.calendar(from: raw) { Task.isCancelled }
+    /// ```
+    public func calendar(
+        from raw: String,
+        isCancelled: () -> Bool
+    ) throws -> ICalendar? {
+        try parseCalendar(
+            elements: getProperties(from: raw) { try throwIfCancelled(isCancelled) },
+            checkCancellation: { try throwIfCancelled(isCancelled) }
+        )
+    }
+
+    /// Builds the calendar from its content lines
+    func parseCalendar(
+        elements: [ICProperty],
+        checkCancellation: () throws -> Void
+    ) rethrows -> ICalendar? {
 
         guard
             let rawValue = getProperty(
@@ -33,135 +79,178 @@ public struct ICParser {
             from: elements
         )?.value
 
+        let version = getProperty(
+            name: Constant.Property.version,
+            from: elements
+        )?.value
+
         let calendarScale = getProperty(
             name: Constant.Property.calScale,
             from: elements
         )?.value
 
-        let eventComponents = getComponents(
-            type: .event,
-            from: elements
+        let timeZoneComponents = try getComponents(
+            name: ICComponentType.timeZone.name,
+            from: elements,
+            checkCancellation: checkCancellation
         )
 
-//        let timeZoneComponents = getComponents(
-//            type: .timeZone,
-//            from: elements
-//        )
+        let eventComponents = try getComponents(
+            name: ICComponentType.event.name,
+            from: elements,
+            checkCancellation: checkCancellation
+        )
 
-        let events = buildEvents(from: eventComponents)
-//        let timeZones = buildTimeZones(from: timeZoneComponents)
+        let timeZones = timeZoneHandling == .legacy
+            ? []
+            : try buildTimeZones(from: timeZoneComponents, checkCancellation: checkCancellation)
+        let events = try buildEvents(from: eventComponents, timeZones: timeZones, checkCancellation: checkCancellation)
 
         return ICalendar(
-            calendarScale: calendarScale,
+            // GREGORIAN is the default when CALSCALE is missing
+            calendarScale: calendarScale ?? Constant.ICalSpec.defaultCalScale,
             events: events,
             method: method,
-            productId: prodId
-//            timeZones: timezones
+            productId: prodId,
+            timeZones: timeZones,
+            version: version ?? Constant.ICalSpec.version
         )
     }
+
+}
+
+// MARK: - Content lines and components
+
+extension ICParser {
 
     func getProperties(
         from ics: String
     ) -> [ICProperty] {
-        return ics
-            .replacingOccurrences(of: "\r\n ", with: "")
-            .components(separatedBy: "\r\n")
-            .map { $0.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true) }
-            .filter { $0.count > 1 }
-            .map { (String($0[0]), String($0[1])) }
+        getProperties(from: ics, checkCancellation: {})
+    }
+
+    func getProperties(
+        from ics: String,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICProperty] {
+        try ContentLineScanner.properties(in: ics, checkCancellation: checkCancellation)
     }
 
     private func getProperty(
         name: String,
         from elements: [ICProperty]
     ) -> ICProperty? {
-        return elements
-            .filter { $0.name.hasPrefix(name) }
-            .first
-    }
-
-    private func getComponents(
-        type: ICComponentType,
-        from elements: [ICProperty]
-    ) -> [ICComponent] {
-        getComponents(name: type.name, from: elements)
+        elements.first { $0.name.hasPropertyName(name) }
     }
 
     private func getComponents(
         name: String,
-        from elements: [ICProperty]
-    ) -> [ICComponent] {
+        from elements: [ICProperty],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICComponent] {
 
         var found = [ICComponent]()
-        var currentComponent: [(String, String)]?
-        var childComponent: [(String, String)]?
+        var properties: [ICProperty]?
+        var childProperties = [ICProperty]()
+        // Nesting depth of child components (e.g. VALARM) inside the current component
+        var depth = 0
 
         for element in elements {
-            if element.name == Constant.Property.begin,
-                element.value == name {
-                if currentComponent == nil {
-                    currentComponent = []
+            try checkCancellation()
+
+            guard properties != nil else {
+                if element.name == Constant.Property.begin, element.value.normalizedName == name {
+                    properties = [element]
+                    childProperties = []
+                    depth = 0
                 }
+                continue
             }
 
-            if currentComponent != nil {
-                if element.name == Constant.Property.begin,
-                   element.value != name,
-                   childComponent == nil {
-                    childComponent = []
-                }
-
-                if childComponent != nil {
-                    childComponent?.append(element)
-                } else {
-                    currentComponent?.append(element)
-                }
+            if element.name == Constant.Property.begin {
+                depth += 1
+                childProperties.append(element)
+            } else if element.name == Constant.Property.end, depth > 0 {
+                depth -= 1
+                childProperties.append(element)
+            } else if depth > 0 {
+                childProperties.append(element)
+            } else {
+                properties?.append(element)
             }
 
-            if element.name == Constant.Property.end,
-               element.value == name {
-                if let currentComponent = currentComponent {
-                    let componentElement = ICComponent(
-                        properties: currentComponent,
-                        childProperties: childComponent ?? [])
-                    found.append(componentElement)
-                }
-                currentComponent = nil
-                childComponent = nil
+            if depth == 0,
+               element.name == Constant.Property.end,
+               element.value.normalizedName == name,
+               let componentProperties = properties {
+                found.append(ICComponent(properties: componentProperties, childProperties: childProperties))
+                properties = nil
             }
         }
 
         return found
     }
 
-    // MARK: - Build functions
+}
+
+// MARK: - Build functions
+
+extension ICParser {
 
     private func buildEvents(
-        from components: [ICComponent]
-    ) -> [ICEvent] {
+        from components: [ICComponent],
+        timeZones: [ICTimeZone],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICEvent] {
+        let lookup = TimeZoneLookup(definitions: timeZones, handling: timeZoneHandling)
 
-        return components.map { component -> ICEvent in
-            var event = ICEvent()
+        return try components.map { component -> ICEvent in
+            try checkCancellation()
+
+            // UID and DTSTAMP are set below; avoid generating default values for them
+            var event = ICEvent(dtStamp: .distantPast, uid: "")
+
+            func dateTime(_ name: String) -> ICDateTime? {
+                component.buildDateTime(of: name, lookup: lookup)
+            }
+
+            func dateTimes(_ name: String) -> [ICDateTime] {
+                PropertyBuilder.buildDateTimes(from: component.getProperties(name: name), lookup: lookup)
+            }
 
             event.attendees = component.buildAttendees(of: Constant.Property.attendee)
             event.classification = component.buildProperty(of: Constant.Property.classification)
-            event.description = component.buildProperty(of: Constant.Property.description)
-            event.dtCreated = component.buildProperty(of: Constant.Property.created)?.date
-            event.dtEnd = component.buildProperty(of: Constant.Property.dtEnd)
-            event.dtStamp = component.buildProperty(of: Constant.Property.dtStamp)?.date ?? Date()
-            event.dtStart = component.buildProperty(of: Constant.Property.dtStart)
-            event.lastModified = component.buildProperty(of: Constant.Property.lastModified)?.date
-            event.location = component.buildProperty(of: Constant.Property.location)
-            event.organizer = component.buildProperty(of: Constant.Property.organizer)
+            event.description = component.buildText(of: Constant.Property.description)
+            event.dtCreated = dateTime(Constant.Property.created)?.date
+            event.dtEnd = dateTime(Constant.Property.dtEnd)
+            event.dtStart = dateTime(Constant.Property.dtStart)
+            event.duration = component.buildProperty(of: Constant.Property.duration).flatMap(ICDuration.init)
+            event.exceptionDates = dateTimes(Constant.Property.exceptionDates)
+            event.lastModified = dateTime(Constant.Property.lastModified)?.date
+            // A fixed fallback, so that parsing the same data always gives the same result
+            event.dtStamp = dateTime(Constant.Property.dtStamp)?.date
+                ?? event.lastModified
+                ?? event.dtCreated
+                ?? .distantPast
+            event.location = component.buildText(of: Constant.Property.location)
+            setOrganizer(of: component, on: &event)
             event.priority = component.buildProperty(of: Constant.Property.priority)
-            event.recurrenceId = component.buildProperty(of: Constant.Property.recurrenceId)
+            event.recurrenceDates = dateTimes(Constant.Property.recurrenceDates)
+            event.recurrenceId = dateTime(Constant.Property.recurrenceId)
+            event.appliesToFutureOccurrences = component
+                .getProperty(name: Constant.Property.recurrenceId)
+                .flatMap { PropertyBuilder.parameter(Constant.Property.range, of: $0) }?
+                .uppercased() == Constant.Property.thisAndFuture
             event.sequence = component.buildProperty(of: Constant.Property.sequence)
             event.status = component.buildProperty(of: Constant.Property.status)
-            event.summary = component.buildProperty(of: Constant.Property.summary)
+            event.summary = component.buildText(of: Constant.Property.summary)
             event.timeTransparency = component.buildProperty(of: Constant.Property.timeTransparency)
             event.url = URL(string: component.buildProperty(of: Constant.Property.url) ?? "")
             event.uid = component.buildProperty(of: Constant.Property.uid) ?? ""
-            event.recurrenceRule = component.buildProperty(of: Constant.Property.recurrenceRule)
+            event.recurrenceRule = component.buildRecurrenceRule(
+                of: Constant.Property.recurrenceRule,
+                timeZoneHandling: timeZoneHandling
+            )
 
             event.nonStandardProperties = component.getNonStandardProperties()
 
@@ -169,70 +258,61 @@ public struct ICParser {
         }
     }
 
+    /// Sets the organizer's address, email address and name
+    private func setOrganizer(of component: ICComponent, on event: inout ICEvent) {
+        let organizer = component.getProperty(name: Constant.Property.organizer)
+        event.organizer = organizer?.value
+        event.organizerEmail = organizer.map { PropertyBuilder.emailAddress(from: $0.value) }
+        event.organizerName = organizer.flatMap { PropertyBuilder.parameter(Constant.Property.cname, of: $0) }
+    }
+
     private func buildTimeZones(
-        from components: [ICComponent]
-    ) -> [ICTimeZone] {
-        return components.compactMap { component -> ICTimeZone? in
+        from components: [ICComponent],
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICTimeZone] {
+        return try components.compactMap { component -> ICTimeZone? in
+            try checkCancellation()
+
             guard
                 let tzid = component.getProperty(
                     name: Constant.Property.tzId
                 )?.value
             else { return nil }
 
-            var standard: ICSubTimeZone?
-            var daylight: ICSubTimeZone?
-
-            let standardComponent = getComponents(
-                name: Constant.Component.standard,
-                from: component.childProperties
-            ).first
-
-            if let standardComponent,
-               let standardSubTimeZone = buildSubTimeZone(from: standardComponent) {
-                standard = standardSubTimeZone
+            func observances(_ name: String) -> [ICSubTimeZone] {
+                getComponents(name: name, from: component.childProperties, checkCancellation: {})
+                    .compactMap(buildSubTimeZone)
             }
 
-            let daylightComponent = getComponents(
-                name: Constant.Component.daylight,
-                from: component.childProperties
-            ).first
-
-            if let daylightComponent,
-               let daylightSubTimeZone = buildSubTimeZone(from: daylightComponent) {
-                daylight = daylightSubTimeZone
-            }
-
-            let nonStandardProperties = component.getNonStandardProperties()
-
-            return ICTimeZone(
-                daylight: daylight,
-                nonStandardProperties: nonStandardProperties,
-                standard: standard,
-                timeZoneId: tzid
-            )
+            var timeZone = ICTimeZone(nonStandardProperties: component.getNonStandardProperties(), timeZoneId: tzid)
+            // A definition may have several of each, e.g. for the rules until 2006 and since 2007
+            timeZone.standardObservances = observances(Constant.Component.standard)
+            timeZone.daylightObservances = observances(Constant.Component.daylight)
+            return timeZone
         }
     }
 
     private func buildSubTimeZone(
         from component: ICComponent
     ) -> ICSubTimeZone? {
-        guard
-            let dtStartValue = component.getProperty(
-                name: Constant.Property.dtStart
-            )?.value,
-            let timeZoneOffsetTo = component.getProperty(
-                name: Constant.Property.tzOffsetTo
-            )?.value,
-            let timeZoneOffsetFrom = component.getProperty(
-                name: Constant.Property.tzOffsetFrom
-            )?.value
-        else { return nil }
+        // Spaces around the values are ignored, as for the dates of events
+        func value(_ name: String) -> String? {
+            component.getProperty(name: name).map { PropertyBuilder.trimmingSpaces($0.value) }
+        }
 
         guard
-            let dtStart = PropertyBuilder.buildDateTime(
-                from: (name: Constant.Property.dtStart, value: dtStartValue)
-            )?.date
+            let dtStartValue = value(Constant.Property.dtStart),
+            let timeZoneOffsetTo = value(Constant.Property.tzOffsetTo),
+            let timeZoneOffsetFrom = value(Constant.Property.tzOffsetFrom)
         else { return nil }
+
+        // DTSTART of an observance is local time in the offset in use before it
+        guard
+            let offsetFrom = UTCOffset.seconds(from: timeZoneOffsetFrom),
+            let wallClock = WallClock(dtStartValue)
+        else { return nil }
+
+        let dtStart = wallClock.date(offset: offsetFrom)
 
         let timeZoneName: String? = component.buildProperty(of: Constant.Property.tzName)
         let rRule: ICRRule? = component.buildProperty(of: Constant.Property.recurrenceRule)

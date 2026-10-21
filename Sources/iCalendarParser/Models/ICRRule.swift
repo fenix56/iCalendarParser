@@ -1,8 +1,11 @@
 /// Identify properties that contain a recurrence rule specification.
 ///
+/// A `BYxxx` list with a value outside its valid range is set to nil, both when it is assigned
+/// and in the initializer.
+///
 /// See more in [RFC 5545](
 /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.10)
-public struct ICRRule {
+public struct ICRRule: Equatable, Sendable {
 
     // MARK: - Public properties
 
@@ -15,13 +18,7 @@ public struct ICRRule {
     /// Valid values are 1 to 31 or -31 to -1.
     public var byDayOfMonth: [Int]? {
         didSet {
-            guard let byDayOfMonth else { return }
-            let valid = byDayOfMonth.allSatisfy { (1...31).contains(abs($0)) }
-            guard valid else {
-                print("by-day-of-month rules must be between 1 and 31 or -31 and -1: \(byDayOfMonth)")
-                self.byDayOfMonth = nil
-                return
-            }
+            byDayOfMonth = Self.valid(byDayOfMonth, 1...31, allowsNegative: true)
         }
     }
 
@@ -31,13 +28,7 @@ public struct ICRRule {
     /// Valid values are 1 to 366 or -366 to -1.
     public var byDayOfYear: [Int]? {
         didSet {
-            guard let byDayOfYear else { return }
-            let valid = byDayOfYear.allSatisfy { (1...366).contains(abs($0)) }
-            guard valid else {
-                print("by-day-of-year rules must be between 1 and 366 or -366 and -1: \(byDayOfYear)")
-                self.byDayOfYear = nil
-                return
-            }
+            byDayOfYear = Self.valid(byDayOfYear, 1...366, allowsNegative: true)
         }
     }
 
@@ -46,13 +37,7 @@ public struct ICRRule {
     /// Must be between 0 and 24 (exclusive).
     public var byHour: [Int]? {
         didSet {
-            guard let byHour else { return }
-            let valid = byHour.allSatisfy { (0..<24).contains($0) }
-            guard valid else {
-                print("by-hour rules must be between 0 and 24 (exclusive): \(byHour)")
-                self.byHour = nil
-                return
-            }
+            byHour = Self.valid(byHour, 0...23)
         }
     }
 
@@ -61,13 +46,7 @@ public struct ICRRule {
     /// Must be between 0 and 60 (exclusive).
     public var byMinute: [Int]? {
         didSet {
-            guard let byMinute else { return }
-            let valid = byMinute.allSatisfy { (0..<60).contains($0) }
-            guard valid else {
-                print("by-minute rules must be between 0 and 60 (exclusive): \(byMinute)")
-                self.byMinute = nil
-                return
-            }
+            byMinute = Self.valid(byMinute, 0...59)
         }
     }
 
@@ -76,13 +55,7 @@ public struct ICRRule {
     /// Must be between 1 and 12 (inclusive).
     public var byMonth: [Int]? {
         didSet {
-            guard let byMonth else { return }
-            let valid = byMonth.allSatisfy { (1...12).contains($0) }
-            guard valid else {
-                print("by-month rules must be between 1 and 12: \(byMonth)")
-                self.byMonth = nil
-                return
-            }
+            byMonth = Self.valid(byMonth, 1...12)
         }
     }
 
@@ -90,13 +63,7 @@ public struct ICRRule {
     /// Must be between 0 and 60 (inclusive).
     public var bySecond: [Int]? {
         didSet {
-            guard let bySecond else { return }
-            let valid = bySecond.allSatisfy { (0...60).contains($0) }
-            guard valid else {
-                print("by-second rules must be between 0 and 60 (inclusive): \(bySecond)")
-                self.bySecond = nil
-                return
-            }
+            bySecond = Self.valid(bySecond, 0...60)
         }
     }
 
@@ -110,14 +77,7 @@ public struct ICRRule {
     /// It MUST only be used in conjunction with another BYxxx rule part.
     public var bySetPos: [Int]? {
         didSet {
-            guard let bySetPos else { return }
-            let valid = bySetPos.allSatisfy { (1...366).contains(abs($0)) }
-            guard valid else {
-                print("by-set-pos rules must be between 1 and 366 or -366 and -1: \(bySetPos)")
-                self.bySetPos = nil
-                return
-            }
-            
+            bySetPos = Self.valid(bySetPos, 1...366, allowsNegative: true)
         }
     }
 
@@ -127,13 +87,7 @@ public struct ICRRule {
     /// Valid values are 1 to 53 or -53 to -1.
     public var byWeekOfYear: [Int]? {
         didSet {
-            guard let byWeekOfYear else { return }
-            let valid = byWeekOfYear.allSatisfy { (1...53).contains(abs($0)) }
-            guard valid else {
-                print("by-week-of-year rules must be between 1 and 53 or -53 and -1: \(byWeekOfYear)")
-                self.byWeekOfYear = nil
-                return
-            }
+            byWeekOfYear = Self.valid(byWeekOfYear, 1...53, allowsNegative: true)
         }
     }
 
@@ -169,9 +123,66 @@ public struct ICRRule {
         }
     }
 
+    // MARK: - Init
+
+    public init(
+        byDay: [Day]? = nil,
+        byDayOfMonth: [Int]? = nil,
+        byDayOfYear: [Int]? = nil,
+        byHour: [Int]? = nil,
+        byMinute: [Int]? = nil,
+        byMonth: [Int]? = nil,
+        bySecond: [Int]? = nil,
+        bySetPos: [Int]? = nil,
+        byWeekOfYear: [Int]? = nil,
+        count: Int? = nil,
+        frequency: Frequency,
+        interval: Int? = nil,
+        startOfWorkweek: DayOfWeek? = nil,
+        until: ICDateTime? = nil
+    ) {
+        // Property observers do not run in an initializer, so validate here as well
+        self.byDay = byDay
+        self.byDayOfMonth = Self.valid(byDayOfMonth, 1...31, allowsNegative: true)
+        self.byDayOfYear = Self.valid(byDayOfYear, 1...366, allowsNegative: true)
+        self.byHour = Self.valid(byHour, 0...23)
+        self.byMinute = Self.valid(byMinute, 0...59)
+        self.byMonth = Self.valid(byMonth, 1...12)
+        self.bySecond = Self.valid(bySecond, 0...60)
+        self.bySetPos = Self.valid(bySetPos, 1...366, allowsNegative: true)
+        self.byWeekOfYear = Self.valid(byWeekOfYear, 1...53, allowsNegative: true)
+        // COUNT and UNTIL must not both be set: UNTIL wins, as when they are assigned one after the other
+        self.count = until == nil ? count : nil
+        self.frequency = frequency
+        self.interval = interval
+        self.startOfWorkweek = startOfWorkweek
+        self.until = until
+    }
+
+    /// Returns `values` when every value is in `range`, or in its negative when `allowsNegative`;
+    /// otherwise nil, as a rule part with an invalid value is invalid as a whole
+    private static func valid(
+        _ values: [Int]?,
+        _ range: ClosedRange<Int>,
+        allowsNegative: Bool = false
+    ) -> [Int]? {
+        guard let values else {
+            return nil
+        }
+        // Not `abs`, which overflows for `Int.min`
+        let negativeRange = -range.upperBound...(-range.lowerBound)
+        let isValid = values.allSatisfy { range.contains($0) || (allowsNegative && negativeRange.contains($0)) }
+        return isValid ? values : nil
+    }
+}
+
+// MARK: - Nested types
+
+extension ICRRule {
+
     // MARK: - Frequency
 
-    public enum Frequency {
+    public enum Frequency: Sendable {
         case secondly
         case minutely
         case hourly
@@ -202,7 +213,7 @@ public struct ICRRule {
         }
     }
 
-    public enum DayOfWeek {
+    public enum DayOfWeek: Sendable {
         case monday
         case tuesday
         case wednesday
@@ -254,7 +265,7 @@ public struct ICRRule {
 
     // MARK: - Day
 
-    public struct Day: Equatable {
+    public struct Day: Equatable, Sendable {
 
         /// The week. May be negative.
         public let week: Int?
@@ -267,9 +278,9 @@ public struct ICRRule {
             dayOfWeek: DayOfWeek
         ) {
             self.dayOfWeek = dayOfWeek
-            
-            if let week, (1...53).contains(abs(week)) == false {
-                print("Week-of-year \(String(week)) is not between 1 and 53 or -53 and -1 (each inclusive)")
+
+            // An ordinal outside 1...53 or -53...-1 is ignored; not `abs`, which overflows for `Int.min`
+            if let week, !(1...53).contains(week), !(-53...(-1)).contains(week) {
                 self.week = nil
             } else {
                 self.week = week
@@ -289,7 +300,12 @@ public struct ICRRule {
         }
 
         public static func from(_ value: String) -> Self? {
-            let index = value.index(value.startIndex, offsetBy: value.count - 2)
+            // A weekday is always two characters, e.g. "MO" or "-1SU"
+            guard value.count >= 2 else {
+                return nil
+            }
+
+            let index = value.index(value.endIndex, offsetBy: -2)
 
             let dayOfWeekStr = String(value[index...])
             let weekStr = String(value[..<index])
@@ -300,60 +316,5 @@ public struct ICRRule {
 
             return Self(week: Int(weekStr), dayOfWeek: dayOfWeek)
         }
-    }
-
-    // MARK: - Private properties
-
-    private var properties: [(String, [Any]?)] {
-        [
-            (Constant.Property.byDay, byDay),
-            (Constant.Property.byDayOfMonth, byDayOfMonth),
-            (Constant.Property.byDayOfYear, byDayOfYear),
-            (Constant.Property.byHour, byHour),
-            (Constant.Property.byMinute, byMinute),
-            (Constant.Property.byMonth, byMonth),
-            (Constant.Property.bySecond, bySecond),
-            (Constant.Property.bySetPos, bySetPos),
-            (Constant.Property.byWeekOfYear, byWeekOfYear),
-            (Constant.Property.count, [count].compactMap { $0 }),
-            (Constant.Property.frequency, [frequency]),
-            (Constant.Property.interval, [interval].compactMap { $0 }),
-            (Constant.Property.startOfWorkweek, [startOfWorkweek].compactMap { $0 }),
-            (Constant.Property.until, [until].compactMap { $0 })
-        ]
-    }
-
-    // MARK: - Init
-
-    public init(
-        byDay: [Day]? = nil,
-        byDayOfMonth: [Int]? = nil,
-        byDayOfYear: [Int]? = nil,
-        byHour: [Int]? = nil,
-        byMinute: [Int]? = nil,
-        byMonth: [Int]? = nil,
-        bySecond: [Int]? = nil,
-        bySetPos: [Int]? = nil,
-        byWeekOfYear: [Int]? = nil,
-        count: Int? = nil,
-        frequency: Frequency,
-        interval: Int? = nil,
-        startOfWorkweek: DayOfWeek? = nil,
-        until: ICDateTime? = nil
-    ) {
-        self.byDay = byDay
-        self.byDayOfMonth = byDayOfMonth
-        self.byDayOfYear = byDayOfYear
-        self.byHour = byHour
-        self.byMinute = byMinute
-        self.byMonth = byMonth
-        self.bySecond = bySecond
-        self.bySetPos = bySetPos
-        self.byWeekOfYear = byWeekOfYear
-        self.count = count
-        self.frequency = frequency
-        self.interval = interval
-        self.startOfWorkweek = startOfWorkweek
-        self.until = until
     }
 }

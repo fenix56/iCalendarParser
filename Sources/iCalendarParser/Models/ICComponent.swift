@@ -8,30 +8,33 @@ struct ICComponent {
     func getProperty(
         name: String
     ) -> ICProperty? {
-        return properties
-            .filter { $0.name.hasPrefix(name) }
-            .first
+        properties.first { Self.hasName($0, name) }
     }
 
-    /// Returns a property that matches the name
+    /// Returns the properties that match the name
     func getProperties(
         name: String
-    ) -> [ICProperty]? {
-        return properties
-            .filter { $0.name.hasPrefix(name) }
+    ) -> [ICProperty] {
+        properties.filter { Self.hasName($0, name) }
+    }
+
+    /// Whether the property, which may have parameters, is named `name`
+    private static func hasName(_ property: ICProperty, _ name: String) -> Bool {
+        property.name.hasPropertyName(name)
     }
 
     // MARK: - Build property
 
-    /// Returns `ICDateTime` from properties
-    func buildProperty(
-        of name: String
+    /// Returns `ICDateTime` from properties, resolving `TZID` with `lookup`
+    func buildDateTime(
+        of name: String,
+        lookup: TimeZoneLookup
     ) -> ICDateTime? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildDateTime(from: prop)
+        return PropertyBuilder.buildDateTime(from: prop, lookup: lookup)
     }
 
     /// Returns `String` from properties
@@ -43,6 +46,17 @@ struct ICComponent {
         }
 
         return prop.value
+    }
+
+    /// Returns an unescaped `TEXT` value from properties
+    func buildText(
+        of name: String
+    ) -> String? {
+        guard let prop = getProperty(name: name) else {
+            return nil
+        }
+
+        return PropertyBuilder.unescapeText(prop.value)
     }
 
     /// Returns `Int` from properties
@@ -60,22 +74,26 @@ struct ICComponent {
     func buildProperty(
         of name: String
     ) -> ICRRule? {
+        buildRecurrenceRule(of: name, timeZoneHandling: .standard)
+    }
+
+    /// Returns `ICRRule` from properties, parsing `UNTIL` with the given time zone handling
+    func buildRecurrenceRule(
+        of name: String,
+        timeZoneHandling: ICParser.TimeZoneHandling
+    ) -> ICRRule? {
         guard let prop = getProperty(name: name) else {
             return nil
         }
 
-        return PropertyBuilder.buildRRule(from: prop)
+        return PropertyBuilder.buildRRule(from: prop, timeZoneHandling: timeZoneHandling)
     }
 
     /// Returns `[Attendee]` from properties
     func buildAttendees(
         of name: String
-    ) -> [ICAttendee]? {
-        guard let props = getProperties(name: name) else {
-            return nil
-        }
-
-        return PropertyBuilder.buildAttendees(from: props)
+    ) -> [ICAttendee] {
+        PropertyBuilder.buildAttendees(from: getProperties(name: name))
     }
 
     /// Returns all non-standard properties if exists
@@ -83,25 +101,13 @@ struct ICComponent {
         var dict = [String: String]()
 
         properties
-            .filter { $0.name.hasPrefix("X-") }
-            .forEach { dict[$0.name] = $0.value }
+            .filter { $0.name.utf8.starts(with: "X-".utf8) }
+            .forEach { dict[$0.name.propertyBaseName] = $0.value }
 
         guard !dict.isEmpty else {
             return nil
         }
 
         return dict
-    }
-
-    // MARK: - Private functions
-
-    /// Returns a property that matches the name in the given properties
-    private func getProperty(
-        name: String,
-        from elements: [ICProperty]
-    ) -> ICProperty? {
-        return elements
-            .filter { $0.name.hasPrefix(name) }
-            .first
     }
 }
