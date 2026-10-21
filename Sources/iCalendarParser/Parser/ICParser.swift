@@ -32,7 +32,7 @@ public struct ICParser: Sendable {
     public func calendar(
         from raw: String
     ) -> ICalendar? {
-        parseCalendar(from: raw, checkCancellation: {})
+        parseCalendar(elements: getProperties(from: raw), checkCancellation: {})
     }
 
     /// Parse strings to create ICalendar object. Returns nil if not found.
@@ -47,19 +47,23 @@ public struct ICParser: Sendable {
         from raw: String,
         isCancelled: () -> Bool
     ) throws -> ICalendar? {
-        try parseCalendar(from: raw) {
+        func checkCancellation() throws {
             if isCancelled() {
                 throw CancellationError()
             }
         }
+
+        return try parseCalendar(
+            elements: getProperties(from: raw, checkCancellation: checkCancellation),
+            checkCancellation: checkCancellation
+        )
     }
 
-    private func parseCalendar(
-        from raw: String,
+    /// Builds the calendar from its content lines
+    func parseCalendar(
+        elements: [ICProperty],
         checkCancellation: () throws -> Void
     ) rethrows -> ICalendar? {
-
-        let elements: [ICProperty] = try getProperties(from: raw, checkCancellation: checkCancellation)
 
         guard
             let rawValue = getProperty(

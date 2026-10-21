@@ -33,6 +33,19 @@ for event in calendar.events {
 }
 ```
 
+If you download the file or read it from disk, pass the `Data` directly instead of converting it
+to a `String` first:
+
+```swift
+let (data, _) = try await URLSession.shared.data(from: feedURL)
+let calendar = ICParser().calendar(from: data)
+```
+
+RFC 5545 allows a producer to fold a long line in the middle of a multi-byte character, such as
+an emoji in a title. `String(data:encoding:)` then fails for the whole file, while
+`calendar(from: Data)` joins the lines before decoding them and restores the character. Invalid
+UTF-8 is replaced with U+FFFD rather than failing.
+
 The parser accepts CRLF, LF and CR line endings, folded lines (space or tab), quoted parameters
 such as `CN="Doe, John"`, and a byte order mark. `SUMMARY`, `DESCRIPTION` and `LOCATION` are
 returned unescaped, with real line breaks, commas and semicolons.
@@ -114,40 +127,51 @@ What is taken into account:
 
 ### Day and week views
 
-Ask for the whole range once and group by day, rather than asking once per day:
+`occurrencesByDay(from:days:)` asks for the whole range once and returns one `ICDay` per calendar
+day, including days without occurrences:
 
 ```swift
-let calendarSystem = Calendar.current
-let tomorrow = calendarSystem.date(byAdding: .day, value: 1, to: calendarSystem.startOfDay(for: Date()))!
-let weekEnd = calendarSystem.date(byAdding: .day, value: 6, to: tomorrow)!
+let startOfToday = Calendar.current.startOfDay(for: Date())
+let startOfTomorrow = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)!
 
-let thisWeek = calendar.occurrences(from: tomorrow, to: weekEnd)
-```
+// "What's on today": from now until midnight
+let today = calendar.occurrencesByDay(from: Date(), days: 1)
 
-## Multi-day events
-
-An event that lasts several days is **one** occurrence: an all-day event from 25 to 27 September
-starts at midnight on the 25th and ends at midnight on the 28th. A query for any single day
-includes it. To show it on every day of a week view, add it to each day it overlaps:
-
-```swift
-func occurrencesByDay(_ occurrences: [ICOccurrence], from start: Date, days: Int) -> [Date: [ICOccurrence]] {
-    let calendar = Calendar.current
-    var result = [Date: [ICOccurrence]]()
-    for offset in 0..<days {
-        let day = calendar.date(byAdding: .day, value: offset, to: start)!
-        let nextDay = calendar.date(byAdding: .day, value: 1, to: day)!
-        result[day] = occurrences.filter { occurrence in
-            occurrence.start < nextDay
-                && (occurrence.end > day || (occurrence.start == occurrence.end && occurrence.start >= day))
-        }
-    }
-    return result
+// "This week": tomorrow and the 5 days after it
+for day in calendar.occurrencesByDay(from: startOfTomorrow, days: 6) {
+    print(day.date, day.occurrences.map { $0.occurrence.event.summary ?? "" })
 }
 ```
 
-To label the days, compare with the day's range: the first day contains `start`, the last day
-contains `end`, and the days in between are "all day".
+The first day begins at `from`, so passing the current time leaves out what already ended today;
+the other days begin at midnight. Days follow `Calendar.current` unless you pass `calendar:`.
+
+## Multi-day events
+
+An event that lasts several days is **one** `ICOccurrence`: an all-day event from 25 to 27
+September starts at midnight on the 25th and ends at midnight on the 28th.
+`occurrencesByDay` lists it on each of those days as an `ICDayOccurrence`, which says which part
+falls on that day:
+
+| Property | Meaning |
+|---|---|
+| `occurrence` | The occurrence, with its event, start and end |
+| `part` | `.whole` (starts and ends that day), `.start`, `.middle` or `.end` |
+| `dayNumber`, `dayCount` | For "day 2 of 3" |
+
+```swift
+for item in day.occurrences {
+    let occurrence = item.occurrence
+    let time: String
+    switch item.part {
+    case .whole: time = occurrence.isAllDay ? "All day" : "\(occurrence.start) – \(occurrence.end)"
+    case .start: time = "From \(occurrence.start)"
+    case .middle: time = "All day (day \(item.dayNumber) of \(item.dayCount))"
+    case .end: time = "Until \(occurrence.end)"
+    }
+    print(occurrence.event.summary ?? "", time)
+}
+```
 
 ## Cancellation
 
@@ -217,11 +241,12 @@ ForEach(occurrences, id: \.listID) { occurrence in
 
 1. Update the minimum deployment target to iOS 15 or tvOS 15 if it is lower.
 2. Create the parser with `ICParser(timeZoneHandling: .legacy)` to keep the dates you get today.
-3. Replace your own recurrence expansion with `calendar.occurrences(from:to:)`, called once for the
-   whole range. It handles `EXDATE`, moved and cancelled occurrences, and monthly rules such as
-   "2nd Tuesday".
-4. Remove any code that unescapes `\n`, `\,` or `\;` in `summary`, `description` or `location`;
+3. Replace your own recurrence expansion with `calendar.occurrencesByDay(from:days:)` (or
+   `occurrences(from:to:)`), called once for the whole range. It handles `EXDATE`, moved and
+   cancelled occurrences, monthly rules such as "2nd Tuesday", and events that last several days.
+4. Pass the downloaded `Data` to `calendar(from:)` instead of converting it to a `String`.
+5. Remove any code that unescapes `\n`, `\,` or `\;` in `summary`, `description` or `location`;
    the parser now does it.
-5. Dates that do not exist, such as `20240230`, are now rejected and come back as `nil`.
-6. In `.standard` mode, `calendar.timeZones` is now filled in, and times without a time zone are
+6. Dates that do not exist, such as `20240230`, are now rejected and come back as `nil`.
+7. In `.standard` mode, `calendar.timeZones` is now filled in, and times without a time zone are
    device-local instead of UTC.

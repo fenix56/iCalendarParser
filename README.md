@@ -47,7 +47,9 @@ cancellation and migrating from 0.3.0.
 
 ### Upcoming events
 
-`occurrences(from:to:)` expands recurring events and returns every occurrence in a date range, sorted by start:
+Pass downloaded or file `Data` straight to `parser.calendar(from: data)`: lines are unfolded before decoding, so characters split across folded lines, such as emoji, are restored.
+
+`occurrencesByDay(from:days:)` returns the occurrences for each calendar day, listing multi-day events on every day they cover. `occurrences(from:to:)` expands recurring events and returns every occurrence in a date range, sorted by start:
 
 ```swift
 let today = Calendar.current.startOfDay(for: Date())

@@ -76,7 +76,7 @@ extension ICalendar {
         }
     }
 
-    private func occurrences(
+    func occurrences(
         from start: Date,
         to end: Date,
         includeCancelled: Bool,
@@ -324,7 +324,8 @@ extension ICEvent {
         return value.date == date
     }
 
-    private static func overlaps(_ start: Date, _ end: Date, _ rangeStart: Date, _ rangeEnd: Date) -> Bool {
+    /// Whether `start..<end` overlaps the range; a zero-length occurrence overlaps when it is inside it
+    static func overlaps(_ start: Date, _ end: Date, _ rangeStart: Date, _ rangeEnd: Date) -> Bool {
         guard start < rangeEnd else {
             return false
         }

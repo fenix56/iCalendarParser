@@ -43,6 +43,19 @@ enum ContentLineScanner {
         }
     }
 
+    /// Calls `checkCancellation` once per physical line.
+    ///
+    /// Lines are unfolded before the bytes are decoded, so a multi-byte character that a producer split
+    /// across a folded line is restored. Invalid UTF-8 is replaced with U+FFFD.
+    static func properties(
+        in data: Data,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [ICProperty] {
+        try data.withUnsafeBytes { rawBytes in
+            try properties(in: rawBytes.bindMemory(to: UInt8.self), checkCancellation: checkCancellation)
+        }
+    }
+
     private static func properties(
         in bytes: UnsafeBufferPointer<UInt8>,
         checkCancellation: () throws -> Void
