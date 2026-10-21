@@ -15,7 +15,7 @@ A short guide to parsing calendars and listing upcoming events.
 ## Requirements
 
 - Swift 6 toolchain (Xcode 16 or later)
-- iOS 15, tvOS 15, macOS 12 or watchOS 8
+- iOS 17, tvOS 17, macOS 12 or watchOS 8
 
 ## Parsing a calendar
 
@@ -264,7 +264,7 @@ ForEach(occurrences, id: \.listID) { occurrence in
 
 ## Migrating from 0.3.0
 
-1. Update the minimum deployment target to iOS 15 or tvOS 15 if it is lower.
+1. Update the minimum deployment target to iOS 17 or tvOS 17 if it is lower.
 2. Create the parser with `ICParser(timeZoneHandling: .legacy)` to keep the dates you get today.
 3. Replace your own recurrence expansion with `calendar.occurrencesByDay(from:days:)` (or
    `occurrences(from:to:)`), called once for the whole range. It handles `EXDATE`, moved and
