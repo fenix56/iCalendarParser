@@ -25,14 +25,19 @@ struct PropertyBuilder {
         lookup: TimeZoneLookup
     ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
-        let isUTC = prop.value.utf8.last == UInt8(ascii: "Z") || prop.value.utf8.last == UInt8(ascii: "z")
-        let value = isUTC ? String(prop.value.dropLast()) : prop.value
+        let trimmed = trimmingSpaces(prop.value)
+        let isUTC = trimmed.utf8.last == UInt8(ascii: "Z") || trimmed.utf8.last == UInt8(ascii: "z")
+        let value = isUTC ? String(trimmed.dropLast()) : trimmed
 
         guard let wallClock = WallClock(value) else {
             return nil
         }
 
         let type = getDateTimeType(from: params, value: value)
+        // A value of the wrong form for its VALUE parameter, such as VALUE=DATE with a time, is invalid
+        guard (type == .dateTime) == (value.utf8.count > 8) else {
+            return nil
+        }
         // A TZID is ignored for DATE values and for UTC times
         let tzid = type == .dateTime && !isUTC ? getTimeZoneId(from: params) : nil
         let zone = resolveZone(type: type, isUTC: isUTC, tzid: tzid, lookup: lookup)
@@ -46,6 +51,18 @@ struct PropertyBuilder {
         dateTime.zone = zone ?? .system(.current)
         dateTime.parsedWallClock = wallClock
         return dateTime
+    }
+
+    /// The value without spaces or tabs around it. RFC 5545 does not allow them,
+    /// but some producers write them, and version 0.3.0 accepted them.
+    private static func trimmingSpaces(_ value: String) -> String {
+        func isSpace(_ byte: UInt8?) -> Bool {
+            byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t")
+        }
+        guard isSpace(value.utf8.first) || isSpace(value.utf8.last) else {
+            return value
+        }
+        return value.trimmingCharacters(in: CharacterSet(charactersIn: " \t"))
     }
 
     /// Returns `ICDateTime` values of a list property such as `EXDATE` or `RDATE`.

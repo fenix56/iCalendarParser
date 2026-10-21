@@ -93,9 +93,10 @@ When an event has no `DTSTAMP`, `dtStamp` is its `LAST-MODIFIED` or `CREATED` da
 | Unknown `TZID` without a `VTIMEZONE` | device time zone | device time zone |
 | `calendar.timeZones` | parsed | empty |
 
-`.standard` follows RFC 5545. `.legacy` parses dates as version 0.3.0 did, apart from the hour
-around a daylight saving change (see below); use it where existing feeds rely on that behaviour,
-as the Players App does:
+`.standard` follows RFC 5545. `.legacy` gives the dates version 0.3.0 gave, apart from times in
+the hour skipped or repeated by a daylight saving change (see below), and values 0.3.0 could not
+read at all (see [Migrating from 0.3.0](#migrating-from-030)). Use it where existing feeds rely on
+that behaviour, as the Players App does:
 
 ```swift
 let parser = ICParser(timeZoneHandling: .legacy)
@@ -272,13 +273,18 @@ ForEach(occurrences, id: \.listID) { occurrence in
 4. Pass the downloaded `Data` to `calendar(from:)` instead of converting it to a `String`.
 5. Remove any code that unescapes `\n`, `\,` or `\;` in `summary`, `description` or `location`;
    the parser now does it.
-6. Dates that do not exist, such as `20240230`, are now rejected and come back as `nil`.
+6. Values that 0.3.0 could not read, and returned as `nil`, now parse: files with LF line endings
+   only, a lower-case `z` or `t`, a quoted or lower-case `tzid` parameter, a `Z` time with a `TZID`
+   (read as UTC), a second of 60, and a date without `VALUE=DATE`. Dates that do not exist, such as
+   `20240230`, are still `nil`, as they were.
 7. In `.standard` mode, `calendar.timeZones` is now filled in, and times without a time zone are
    device-local instead of UTC.
 8. `ParticipationStatus.tenative` is now `.tentative` (the old name still works, with a
    deprecation warning), and there is a new `.delegated` case: a `switch` over
    `ParticipationStatus` needs a case for it.
 9. Smaller changes you may notice:
+   - A `VALUE=DATE` value with a `TZID` is midnight in the device's time zone, like every date
+     without a time, instead of midnight in the `TZID`'s zone.
    - A missing `DTSTAMP` is no longer the time of parsing (see above).
    - `calendarScale` is `GREGORIAN` instead of `nil` when the calendar does not set it.
    - `X-` property keys no longer include parameters, and names are upper case.

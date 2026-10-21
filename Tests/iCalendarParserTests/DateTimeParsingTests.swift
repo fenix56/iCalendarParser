@@ -109,6 +109,36 @@ final class DateTimeParsingTests: XCTestCase {
         }
     }
 
+    func testValueMustHaveFormOfValueType() {
+        XCTAssertNil(dateTime("DTSTART;VALUE=DATE", "20240115T100000"))
+        XCTAssertNil(dateTime("DTSTART;VALUE=DATE", "20240115T100000Z"))
+        XCTAssertNil(dateTime("DTSTART;VALUE=DATE-TIME", "20240115"))
+        XCTAssertEqual(dateTime("DTSTART;VALUE=DATE-TIME", "20240115T100000Z")?.type, .dateTime)
+        XCTAssertEqual(dateTime("RDATE;VALUE=PERIOD", "20240115T100000Z")?.type, .dateTime)
+    }
+
+    func testSpacesAroundValueAreIgnored() {
+        let utc = Date(timeIntervalSince1970: 1_705_312_800) // 2024-01-15 10:00 UTC
+
+        XCTAssertEqual(dateTime("DTSTART", " 20240115T100000Z")?.date, utc)
+        XCTAssertEqual(dateTime("DTSTART", "20240115T100000Z \t")?.date, utc)
+        XCTAssertEqual(dateTime("DTSTART;VALUE=DATE", "20240115 ")?.type, .date)
+        XCTAssertNil(dateTime("DTSTART", "20240115 T100000Z"))
+
+        let exceptionDates = PropertyBuilder.buildDateTimes(
+            from: [("EXDATE", "20240115T100000Z, 20240116T100000Z")],
+            lookup: TimeZoneLookup()
+        )
+        XCTAssertEqual(exceptionDates.map(\.date), [utc, utc.addingTimeInterval(86_400)])
+
+        let raw = [
+            "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Example//EN",
+            "BEGIN:VEVENT", "UID:1", "DTSTART:20240115T100000Z ", "END:VEVENT",
+            "END:VCALENDAR"
+        ].joined(separator: "\r\n")
+        XCTAssertEqual(ICParser(timeZoneHandling: .legacy).calendar(from: raw)?.events.first?.dtStart?.date, utc)
+    }
+
     func testLeapDayAndLeapSecond() {
         XCTAssertNotNil(dateTime("DTSTART", "20240229"))
         XCTAssertEqual(
