@@ -139,6 +139,28 @@ final class DateTimeParsingTests: XCTestCase {
         XCTAssertEqual(ICParser(timeZoneHandling: .legacy).calendar(from: raw)?.events.first?.dtStart?.date, utc)
     }
 
+    func testSpacesAroundTimeZoneObservanceValuesAreIgnored() {
+        let raw = [
+            "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Example//EN",
+            "BEGIN:VTIMEZONE", "TZID:GMT Standard Time",
+            "BEGIN:STANDARD", "DTSTART:16010101T020000 ", "TZOFFSETFROM: +0100", "TZOFFSETTO:+0000 ",
+            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10", "END:STANDARD",
+            "BEGIN:DAYLIGHT", "DTSTART:16010101T010000 ", "TZOFFSETFROM:+0000\t", "TZOFFSETTO: +0100",
+            "RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3", "END:DAYLIGHT",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT", "UID:1", "DTSTART;TZID=GMT Standard Time:20260715T100000", "END:VEVENT",
+            "END:VCALENDAR"
+        ].joined(separator: "\r\n")
+
+        let calendar = ICParser().calendar(from: raw)
+
+        XCTAssertEqual(calendar?.uniqueTimeZone?.standard?.timeZoneOffsetTo, "+0000")
+        XCTAssertEqual(calendar?.uniqueTimeZone?.daylightObservances.count, 1)
+        // 10:00 BST
+        XCTAssertEqual(calendar?.events.first?.dtStart?.date, Date(timeIntervalSince1970: 1_784_106_000))
+        XCTAssertEqual(calendar?.events.first?.dtStart?.isFloating, false)
+    }
+
     func testLeapDayAndLeapSecond() {
         XCTAssertNotNil(dateTime("DTSTART", "20240229"))
         XCTAssertEqual(

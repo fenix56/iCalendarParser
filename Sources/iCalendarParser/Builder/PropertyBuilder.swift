@@ -55,7 +55,7 @@ struct PropertyBuilder {
 
     /// The value without spaces or tabs around it. RFC 5545 does not allow them,
     /// but some producers write them, and version 0.3.0 accepted them.
-    private static func trimmingSpaces(_ value: String) -> String {
+    static func trimmingSpaces(_ value: String) -> String {
         func isSpace(_ byte: UInt8?) -> Bool {
             byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t")
         }

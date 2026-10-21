@@ -295,16 +295,15 @@ extension ICParser {
     private func buildSubTimeZone(
         from component: ICComponent
     ) -> ICSubTimeZone? {
+        // Spaces around the values are ignored, as for the dates of events
+        func value(_ name: String) -> String? {
+            component.getProperty(name: name).map { PropertyBuilder.trimmingSpaces($0.value) }
+        }
+
         guard
-            let dtStartValue = component.getProperty(
-                name: Constant.Property.dtStart
-            )?.value,
-            let timeZoneOffsetTo = component.getProperty(
-                name: Constant.Property.tzOffsetTo
-            )?.value,
-            let timeZoneOffsetFrom = component.getProperty(
-                name: Constant.Property.tzOffsetFrom
-            )?.value
+            let dtStartValue = value(Constant.Property.dtStart),
+            let timeZoneOffsetTo = value(Constant.Property.tzOffsetTo),
+            let timeZoneOffsetFrom = value(Constant.Property.tzOffsetFrom)
         else { return nil }
 
         // DTSTART of an observance is local time in the offset in use before it
