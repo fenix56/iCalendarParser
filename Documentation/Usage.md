@@ -15,7 +15,7 @@ A short guide to parsing calendars and listing upcoming events.
 ## Requirements
 
 - Swift 6 toolchain (Xcode 16 or later)
-- iOS 17, tvOS 17, macOS 12 or watchOS 8
+- iOS 17, tvOS 17 or macOS 14
 
 ## Parsing a calendar
 
