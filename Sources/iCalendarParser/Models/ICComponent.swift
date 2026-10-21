@@ -18,11 +18,9 @@ struct ICComponent {
         properties.filter { Self.hasName($0, name) }
     }
 
-    /// Whether the property name, including any parameters, starts with `name`.
-    ///
-    /// Compares UTF-8 bytes: property names are ASCII, and this is much faster than `hasPrefix`.
+    /// Whether the property, which may have parameters, is named `name`
     private static func hasName(_ property: ICProperty, _ name: String) -> Bool {
-        property.name.utf8.starts(with: name.utf8)
+        property.name.hasPropertyName(name)
     }
 
     // MARK: - Build property
@@ -115,8 +113,8 @@ struct ICComponent {
         var dict = [String: String]()
 
         properties
-            .filter { Self.hasName($0, "X-") }
-            .forEach { dict[$0.name] = $0.value }
+            .filter { $0.name.utf8.starts(with: "X-".utf8) }
+            .forEach { dict[$0.name.propertyBaseName] = $0.value }
 
         guard !dict.isEmpty else {
             return nil

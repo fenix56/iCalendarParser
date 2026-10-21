@@ -92,12 +92,6 @@ extension Constant {
         static let url: String = "URL"
     }
 
-    enum ProductId {
-        static let companyName: String = "Aria Inc"
-        static let productName: String = "ICalendarParser"
-        static let language: String = "EN"
-    }
-
     enum Frequency {
         static let secondly: String = "SECONDLY"
         static let minutely: String = "MINUTELY"
@@ -122,7 +116,8 @@ extension Constant {
         static let needsAction = "NEEDS-ACTION"
         static let accepted = "ACCEPTED"
         static let declined = "DECLINED"
-        static let tenative = "TENTATIVE"
+        static let tentative = "TENTATIVE"
+        static let delegated = "DELEGATED"
     }
 
 }

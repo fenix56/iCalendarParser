@@ -17,7 +17,7 @@ struct PropertyBuilder {
         timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICDateTime? {
         let params = getParamsOfValue(from: prop.name)
-        let isUTC = prop.value.utf8.last == UInt8(ascii: "Z")
+        let isUTC = prop.value.utf8.last == UInt8(ascii: "Z") || prop.value.utf8.last == UInt8(ascii: "z")
         let value = isUTC ? String(prop.value.dropLast()) : prop.value
 
         guard let wallClock = WallClock(value) else {
@@ -109,7 +109,8 @@ struct PropertyBuilder {
         from prop: ICProperty,
         timeZoneHandling: ICParser.TimeZoneHandling = .standard
     ) -> ICRRule? {
-        let params = getParamsOfValue(from: prop.value)
+        // Rule part names and values are case-insensitive
+        let params = getParamsOfValue(from: prop.value.normalizedName)
         let frequencyProperty = params
             .filter { $0.name == Constant.Property.frequency }
             .first
@@ -157,38 +158,12 @@ struct PropertyBuilder {
         return rule
     }
 
-    static func buildAttendees(
-        from props: [ICProperty]
-    ) -> [ICAttendee]? {
-        return props.map { prop -> ICAttendee in
-            var attendee = ICAttendee()
-
-            let params = getParamsOfValue(from: prop.name)
-            params.forEach { property in
-                switch property.name {
-                case Constant.Property.cname:
-                    attendee.cname = property.value
-                case Constant.Property.partstat:
-                    attendee.participationStatus = ParticipationStatus(rawValue: property.value)
-                default:
-                    if attendee.nonStandardProperties == nil {
-                        attendee.nonStandardProperties = [:]
-                    }
-                    attendee.nonStandardProperties?[property.name] = property.value
-                }
-            }
-
-            attendee.email = removingMailtoScheme(from: prop.value)
-            return attendee
-        }
-    }
-
     /// Returns the value of a parameter of a property, e.g. `RANGE` of `RECURRENCE-ID;RANGE=THISANDFUTURE`
     static func parameter(
         _ name: String,
         of prop: ICProperty
     ) -> String? {
-        getParamsOfValue(from: prop.name).first { $0.name.uppercased() == name }?.value
+        getParamsOfValue(from: prop.name).first { $0.name == name }?.value
     }
 
     /// Returns the value of a `TEXT` property with escaped characters restored.
@@ -244,7 +219,7 @@ struct PropertyBuilder {
     ///
     /// Separators inside quoted parameter values are ignored and the
     /// surrounding quotes are removed from the returned values.
-    private static func getParamsOfValue(
+    static func getParamsOfValue(
         from value: String
     ) -> [ICProperty] {
         return value
@@ -257,19 +232,9 @@ struct PropertyBuilder {
                 let unquoted = paramValue.utf8.contains(UInt8(ascii: "\""))
                     ? String(paramValue.filter { $0 != "\"" })
                     : String(paramValue)
-                return (name: String(param[..<equals]), value: unquoted)
+                // Parameter names are case-insensitive
+                return (name: String(param[..<equals]).normalizedName, value: unquoted)
             }
-    }
-
-    /// Returns the calendar user address without the `mailto:` scheme (case-insensitive)
-    private static func removingMailtoScheme(
-        from value: String
-    ) -> String {
-        let scheme = "mailto:"
-        guard value.lowercased().hasPrefix(scheme) else {
-            return value
-        }
-        return String(value.dropFirst(scheme.count))
     }
 
     /// Returns `ICDateTimeType` from the given properties
@@ -285,10 +250,10 @@ struct PropertyBuilder {
                 $0.name == Constant.Property.value
             })?.value
         else {
-            return value.contains("T") ? .dateTime : .date
+            return value.contains("T") || value.contains("t") ? .dateTime : .date
         }
 
-        switch valueType {
+        switch valueType.normalizedName {
         case Constant.Property.date:
             return .date
         default:

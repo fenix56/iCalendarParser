@@ -128,6 +128,26 @@ enum ContentLineScanner {
         return index + 1
     }
 
+    /// Decodes a property name with its parameters, upper-casing the name itself.
+    ///
+    /// Property names are case-insensitive; parameter values such as `CN` keep their case.
+    private static func name(in bytes: Slice<UnsafeBufferPointer<UInt8>>) -> String {
+        let lowercase = UInt8(ascii: "a")...UInt8(ascii: "z")
+        let nameEnd = bytes.firstIndex(of: UInt8(ascii: ";")) ?? bytes.endIndex
+
+        // swiftlint:disable optional_data_string_conversion
+        guard bytes[bytes.startIndex..<nameEnd].contains(where: lowercase.contains) else {
+            return String(decoding: bytes, as: UTF8.self)
+        }
+
+        var name = Array(bytes)
+        for index in 0..<(nameEnd - bytes.startIndex) where lowercase.contains(name[index]) {
+            name[index] -= UInt8(ascii: "a") - UInt8(ascii: "A")
+        }
+        return String(decoding: name, as: UTF8.self)
+        // swiftlint:enable optional_data_string_conversion
+    }
+
     /// Splits a logical line at the first `:` outside quotes
     private static func property(in line: Slice<UnsafeBufferPointer<UInt8>>) -> ICProperty? {
         var isQuoted = false
@@ -142,7 +162,7 @@ enum ContentLineScanner {
                 // The bytes are valid UTF-8 split at ASCII characters, so decoding cannot fail
                 // swiftlint:disable optional_data_string_conversion
                 return (
-                    name: String(decoding: line[line.startIndex..<index], as: UTF8.self),
+                    name: name(in: line[line.startIndex..<index]),
                     value: String(decoding: line[(index + 1)..<line.endIndex], as: UTF8.self)
                 )
                 // swiftlint:enable optional_data_string_conversion

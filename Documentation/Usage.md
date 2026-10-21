@@ -60,8 +60,22 @@ Besides the existing properties, `ICEvent` has:
 | `recurrenceRule: ICRRule?` | `RRULE` |
 | `appliesToFutureOccurrences: Bool` | `RECURRENCE-ID;RANGE=THISANDFUTURE` |
 | `isCancelled: Bool` | `STATUS:CANCELLED` |
+| `organizerName: String?` | The `CN` of `ORGANIZER` |
+| `organizerEmail: String?` | The `ORGANIZER` address without `mailto:` |
 
-`calendar.timeZones` holds the `VTIMEZONE` definitions of the calendar.
+`ICAttendee` also has `role` (such as `REQ-PARTICIPANT`), `rsvp: Bool?` and `calendarUserType`
+(such as `ROOM`).
+
+`calendar.timeZones` holds the `VTIMEZONE` definitions of the calendar, `calendar.version` the
+`VERSION`, and `calendar.calendarScale` defaults to `GREGORIAN`.
+
+Property names, parameter names and values such as `VALUE=DATE` or `FREQ=WEEKLY` are matched
+case-insensitively, as RFC 5545 requires. Non-standard `X-` properties are keyed by their
+upper-cased name without parameters, such as `X-ALT-DESC`.
+
+When an event has no `DTSTAMP`, `dtStamp` is its `LAST-MODIFIED` or `CREATED` date, or
+`Date.distantPast` when it has neither. When it has no `UID`, `uid` is empty, and when it has no
+`ATTENDEE`, `attendees` is empty.
 
 ## Time zones
 
@@ -250,3 +264,12 @@ ForEach(occurrences, id: \.listID) { occurrence in
 6. Dates that do not exist, such as `20240230`, are now rejected and come back as `nil`.
 7. In `.standard` mode, `calendar.timeZones` is now filled in, and times without a time zone are
    device-local instead of UTC.
+8. `ParticipationStatus.tenative` is now `.tentative` (the old name still works, with a
+   deprecation warning), and there is a new `.delegated` case: a `switch` over
+   `ParticipationStatus` needs a case for it.
+9. Smaller changes you may notice:
+   - A missing `DTSTAMP` is no longer the time of parsing (see above).
+   - `calendarScale` is `GREGORIAN` instead of `nil` when the calendar does not set it.
+   - `X-` property keys no longer include parameters, and names are upper case.
+   - `ICRRule(...)` now drops invalid rule parts, and keeps only `until` when given both `count`
+     and `until`, as assigning them one after the other already did.

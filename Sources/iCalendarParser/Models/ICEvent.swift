@@ -1,13 +1,9 @@
 import Foundation
 
-/// A grouping of component properties that describe an
+/// A grouping of component properties that describe an event
 ///
 /// See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.6.1)
-public struct ICEvent: ICComponentable, Sendable {
-
-    // MARK: - ICComponentable
-
-    let type: ICComponentType = .event
+public struct ICEvent: Sendable {
 
     // MARK: - Properties
 
@@ -15,6 +11,8 @@ public struct ICEvent: ICComponentable, Sendable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.1)
+    ///
+    /// Empty when a parsed event has no `ATTENDEE`.
     public var attendees: [ICAttendee]?
 
     // Provides the capability to associate a document object with a calendar component.
@@ -57,18 +55,12 @@ public struct ICEvent: ICComponentable, Sendable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.2.2)
     public var dtEnd: ICDateTime?
 
-    /**
-     The calendar scale used for the calendar information specified in the iCalendar object.
-     In the case of an iCalendar object that specifies a
-     "METHOD" property, this property specifies the date and time that
-     the instance of the iCalendar object was created.  In the case of
-     an iCalendar object that doesn't specify a "METHOD" property, this
-     property specifies the date and time that the information
-     associated with the calendar component was last revised in the
-     calendar
-     
-     See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.8.7.2)
-     */
+    /// When the event was created or last revised, as set by the producer (`DTSTAMP`).
+    ///
+    /// When the event has no valid `DTSTAMP`, `LAST-MODIFIED` or `CREATED` is used instead,
+    /// and `Date.distantPast` when it has neither.
+    ///
+    /// See more in [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545#section-3.8.7.2)
     public var dtStamp: Date
 
     /// The start date and time for the event.
@@ -122,7 +114,16 @@ public struct ICEvent: ICComponentable, Sendable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.3)
+    ///
+    /// The calendar user address as written, such as `mailto:jane@example.com`.
+    /// See `organizerEmail` and `organizerName`.
     public var organizer: String?
+
+    /// The common name (`CN`) of the organizer
+    public var organizerName: String?
+
+    /// The organizer's calendar user address without the `mailto:` scheme
+    public var organizerEmail: String?
 
     /// Defines the relative priority for a calendar component.
     ///
@@ -193,6 +194,8 @@ public struct ICEvent: ICComponentable, Sendable {
     ///
     /// See more in [RFC 5545](
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.8.4.7)
+    ///
+    /// Empty when a parsed event has no `UID`.
     public var uid: String
 
     /// Defines a Uniform Resource Locator (URL) associated with the iCalendar object.
@@ -216,6 +219,8 @@ public struct ICEvent: ICComponentable, Sendable {
         location: String? = nil,
         nonStandardProperties: [String: String]? = nil,
         organizer: String? = nil,
+        organizerEmail: String? = nil,
+        organizerName: String? = nil,
         priority: Int? = nil,
         recurrenceDates: [ICDateTime] = [],
         recurrenceId: ICDateTime? = nil,
@@ -241,6 +246,8 @@ public struct ICEvent: ICComponentable, Sendable {
         self.location = location
         self.nonStandardProperties = nonStandardProperties
         self.organizer = organizer
+        self.organizerEmail = organizerEmail
+        self.organizerName = organizerName
         self.priority = priority
         self.recurrenceDates = recurrenceDates
         self.recurrenceId = recurrenceId

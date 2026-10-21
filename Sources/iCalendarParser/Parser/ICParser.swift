@@ -85,6 +85,11 @@ public struct ICParser: Sendable {
             from: elements
         )?.value
 
+        let version = getProperty(
+            name: Constant.Property.version,
+            from: elements
+        )?.value
+
         let calendarScale = getProperty(
             name: Constant.Property.calScale,
             from: elements
@@ -108,11 +113,13 @@ public struct ICParser: Sendable {
         let events = try buildEvents(from: eventComponents, timeZones: timeZones, checkCancellation: checkCancellation)
 
         return ICalendar(
-            calendarScale: calendarScale,
+            // GREGORIAN is the default when CALSCALE is missing
+            calendarScale: calendarScale ?? Constant.ICalSpec.defaultCalScale,
             events: events,
             method: method,
             productId: prodId,
-            timeZones: timeZones
+            timeZones: timeZones,
+            version: version ?? Constant.ICalSpec.version
         )
     }
 
@@ -139,7 +146,7 @@ extension ICParser {
         name: String,
         from elements: [ICProperty]
     ) -> ICProperty? {
-        elements.first { $0.name.utf8.starts(with: name.utf8) }
+        elements.first { $0.name.hasPropertyName(name) }
     }
 
     private func getComponents(
@@ -158,7 +165,7 @@ extension ICParser {
             try checkCancellation()
 
             guard properties != nil else {
-                if element.name == Constant.Property.begin, element.value == name {
+                if element.name == Constant.Property.begin, element.value.normalizedName == name {
                     properties = [element]
                     childProperties = []
                     depth = 0
@@ -180,7 +187,7 @@ extension ICParser {
 
             if depth == 0,
                element.name == Constant.Property.end,
-               element.value == name,
+               element.value.normalizedName == name,
                let componentProperties = properties {
                 found.append(ICComponent(properties: componentProperties, childProperties: childProperties))
                 properties = nil
@@ -225,13 +232,17 @@ extension ICParser {
             event.description = component.buildText(of: Constant.Property.description)
             event.dtCreated = dateTime(Constant.Property.created)?.date
             event.dtEnd = dateTime(Constant.Property.dtEnd)
-            event.dtStamp = dateTime(Constant.Property.dtStamp)?.date ?? Date()
             event.dtStart = dateTime(Constant.Property.dtStart)
             event.duration = component.buildProperty(of: Constant.Property.duration).flatMap(ICDuration.init)
             event.exceptionDates = dateTimes(Constant.Property.exceptionDates)
             event.lastModified = dateTime(Constant.Property.lastModified)?.date
+            // A fixed fallback, so that parsing the same data always gives the same result
+            event.dtStamp = dateTime(Constant.Property.dtStamp)?.date
+                ?? event.lastModified
+                ?? event.dtCreated
+                ?? .distantPast
             event.location = component.buildText(of: Constant.Property.location)
-            event.organizer = component.buildProperty(of: Constant.Property.organizer)
+            setOrganizer(of: component, on: &event)
             event.priority = component.buildProperty(of: Constant.Property.priority)
             event.recurrenceDates = dateTimes(Constant.Property.recurrenceDates)
             event.recurrenceId = dateTime(Constant.Property.recurrenceId)
@@ -254,6 +265,14 @@ extension ICParser {
 
             return event
         }
+    }
+
+    /// Sets the organizer's address, email address and name
+    private func setOrganizer(of component: ICComponent, on event: inout ICEvent) {
+        let organizer = component.getProperty(name: Constant.Property.organizer)
+        event.organizer = organizer?.value
+        event.organizerEmail = organizer.map { PropertyBuilder.emailAddress(from: $0.value) }
+        event.organizerName = organizer.flatMap { PropertyBuilder.parameter(Constant.Property.cname, of: $0) }
     }
 
     private func buildTimeZones(

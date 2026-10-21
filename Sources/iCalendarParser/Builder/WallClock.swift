@@ -29,7 +29,7 @@ struct WallClock: Hashable, Comparable {
     /// https://www.rfc-editor.org/rfc/rfc5545#section-3.3.5)
     init?(_ value: String) {
         let digits = Array(value.utf8)
-        let hasTime = digits.count == 15 && digits[8] == UInt8(ascii: "T")
+        let hasTime = digits.count == 15 && (digits[8] == UInt8(ascii: "T") || digits[8] == UInt8(ascii: "t"))
         guard digits.count == 8 || hasTime else {
             return nil
         }

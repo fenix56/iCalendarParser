@@ -1,10 +1,6 @@
 import Foundation
 
-public struct ICTimeZone: ICComponentable, Sendable {
-
-    // MARK: - ICComponentable
-
-    let type: ICComponentType = .timeZone
+public struct ICTimeZone: Sendable {
 
     // MARK: - Properties
 
@@ -44,11 +40,6 @@ public struct ICTimeZone: ICComponentable, Sendable {
         self.standard = standard
         self.timeZoneId = timeZoneId
         self.timeZoneUrl = timeZoneUrl
-
-        guard standard != nil || daylight != nil else {
-            print("Either standard or daylight timezone should be set")
-            return
-        }
     }
 }
 

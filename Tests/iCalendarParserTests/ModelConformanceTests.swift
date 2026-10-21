@@ -20,20 +20,14 @@ final class ModelConformanceTests: XCTestCase {
         try XCTUnwrap(ICParser().calendar(from: raw))
     }
 
-    private func withoutStamp(_ event: ICEvent) -> ICEvent {
-        var event = event
-        event.dtStamp = .distantPast
-        return event
-    }
-
     // MARK: - Equatable
 
     func testSameInputParsesToEqualValues() throws {
         let first = try parse()
         let second = try parse()
 
-        // DTSTAMP is missing, so it is filled in with the parse time
-        XCTAssertEqual(first.events.map(withoutStamp), second.events.map(withoutStamp))
+        XCTAssertEqual(first.events, second.events)
+        XCTAssertEqual(first.events.map(\.dtStamp), second.events.map(\.dtStamp))
         XCTAssertEqual(first.timeZones, second.timeZones)
     }
 
